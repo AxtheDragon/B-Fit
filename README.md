@@ -40,7 +40,8 @@ Then open http://localhost:8080. Service workers need `localhost` or HTTPS.
 
 ## Deploy (GitHub Pages)
 
-In the repository go to **Settings → Pages**. Under "Build and deployment", set Source to "Deploy from a branch", then pick branch `main` and folder `/ (root)`.
-The app will be available at https://axthedragon.github.io/B-Fit/
+Go to **Settings → Pages** and set Source to **GitHub Actions**. After that, the workflow
+`.github/workflows/pages.yml` publishes the app on every push to `main`. You can also run it by hand from the
+Actions tab. The app is available at https://axthedragon.github.io/B-Fit/
 
 After changing the list of files in `sw.js`, bump `CACHE_VERSION` there.
