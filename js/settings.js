@@ -4,6 +4,7 @@
 import { getAll, remove, exportAll, importAll } from './db.js';
 import { h, add, setChildren, todayISO, toast, CATEGORIES } from './util.js';
 import { customGroupForm } from './record.js';
+import { APP_VERSION } from './version.js';
 
 export async function render(container) {
   const [groups, exercises, sessions] = await Promise.all([getAll('muscleGroups'), getAll('exercises'), getAll('sessions')]);
@@ -84,6 +85,10 @@ export async function render(container) {
       h('div', { class: 'group-label' }, 'Add custom muscle group'),
       customGroupForm(() => window.dispatchEvent(new HashChangeEvent('hashchange')))),
 
-    h('p', { class: 'muted small', style: 'margin-top:24px; text-align:center' }, 'B-Fit · works offline · no account, no tracking'),
+    h('section', { class: 'card', style: 'margin-top:16px' },
+      h('div', { class: 'row' },
+        h('h3', { class: 'spacer' }, 'About'),
+        h('span', { class: 'version-badge', 'data-testid': 'app-version' }, `Version ${APP_VERSION}`)),
+      h('p', { class: 'muted small', style: 'margin:8px 0 0' }, 'B-Fit · works offline · no account, no tracking')),
   );
 }

@@ -6,23 +6,25 @@
  * raw strings typed by the user while drafting and converted on save.
  *
  * Draft shape:
- *   { editingId: number|null, date: 'YYYY-MM-DD', note: '',
- *     entries: [ { exerciseId, type: 'strength', sets: [{ weight: '60', reps: '10' }], lastInfo }
- *              | { exerciseId, type: 'cardio', duration: '20', intensity: '8', lastInfo } ] }
+ *   { editingId: number|null, date: 'YYYY-MM-DD', time: 'HH:MM', location: '', note: '',
+ *     entries: [ { exerciseId, type: 'strength', sets: [{ weight: '60', reps: '10' }], note, lastInfo }
+ *              | { exerciseId, type: 'cardio', duration: '20', intensity: '8', distance: '', laps: '', note, lastInfo } ] }
+ * (`lastInfo` and `showNote` only exist in the draft, they are not saved.)
  */
 import { getAll, get, put, getSessions, getLastEntry, getDraft, saveDraft, clearDraft, findExerciseByName } from './db.js';
-import { h, add, setChildren, todayISO, formatDate, toNumber, numToStr, entrySummary, byId, toast, CATEGORIES } from './util.js';
+import { h, setChildren, todayISO, nowTime, formatDate, toNumber, numToStr, entrySummary, byId, toast, CATEGORIES } from './util.js';
 
 let draft = null;          // the form state
 let exercisesById = new Map();
 let muscleGroupsById = new Map();
+let pastLocations = [];   // suggestions for the location field
 let root = null;           // element the screen renders into
 let saveTimer = null;
 
 /* ---------- Draft persistence ---------- */
 
 function newDraft() {
-  return { editingId: null, date: todayISO(), note: '', entries: [] };
+  return { editingId: null, date: todayISO(), time: nowTime(), location: '', note: '', entries: [] };
 }
 
 function hasContent(d) {
@@ -52,16 +54,26 @@ export async function leave() {
   draft = null; // other screens may change the stored draft (e.g. "Edit session")
 }
 
-/** Convert a saved session entry into a draft entry (numbers -> strings). */
-function toDraftEntry(entry) {
+/** Cardio fields: [key, label, unit, inputmode]. All of them are optional. */
+const CARDIO_FIELDS = [
+  ['duration', 'Duration', 'min', 'decimal'],
+  ['intensity', 'Intensity level', 'lvl', 'decimal'],
+  ['distance', 'Distance', 'km', 'decimal'],
+  ['laps', 'No. of laps', 'laps', 'numeric'],
+];
+
+/**
+ * Convert a saved session entry into a draft entry (numbers -> strings).
+ * `withNote` is false when prefilling from last time: notes are not copied.
+ */
+function toDraftEntry(entry, withNote = true) {
+  const base = { exerciseId: entry.exerciseId, type: entry.type, note: withNote ? entry.note || '' : '' };
   if (entry.type === 'cardio') {
-    return { exerciseId: entry.exerciseId, type: 'cardio', duration: numToStr(entry.duration), intensity: numToStr(entry.intensity) };
+    for (const [key] of CARDIO_FIELDS) base[key] = numToStr(entry[key]);
+    return base;
   }
-  return {
-    exerciseId: entry.exerciseId,
-    type: 'strength',
-    sets: entry.sets.map((s) => ({ weight: numToStr(s.weight), reps: numToStr(s.reps) })),
-  };
+  base.sets = entry.sets.map((s) => ({ weight: numToStr(s.weight), reps: numToStr(s.reps) }));
+  return base;
 }
 
 /**
@@ -77,6 +89,8 @@ export async function editSession(session) {
   await saveDraft({
     editingId: session.id,
     date: session.date,
+    time: session.time || '',
+    location: session.location || '',
     note: session.note || '',
     entries: session.entries.map(toDraftEntry),
   });
@@ -87,12 +101,15 @@ export async function editSession(session) {
 
 export async function render(container) {
   root = container;
-  const [exercises, groups, stored] = await Promise.all([getAll('exercises'), getAll('muscleGroups'), getDraft()]);
+  const [exercises, groups, stored, sessions] = await Promise.all([
+    getAll('exercises'), getAll('muscleGroups'), getDraft(), getSessions()]);
   exercisesById = byId(exercises);
   muscleGroupsById = byId(groups);
-  draft = stored || newDraft();
-  // An untouched new form always starts on today's date.
-  if (!hasContent(draft)) draft.date = todayISO();
+  // Distinct past locations, most recently used first.
+  pastLocations = [...new Set(sessions.map((s) => s.location).filter(Boolean))];
+  draft = { time: '', location: '', ...(stored || newDraft()) }; // drafts from v1.0 lack time/location
+  // An untouched new form always starts on today's date and the current time.
+  if (!hasContent(draft)) { draft.date = todayISO(); draft.time = nowTime(); }
   build();
 }
 
@@ -108,11 +125,24 @@ function build() {
     h('h1', {}, editing ? 'Edit session' : 'New session'),
 
     h('div', { class: 'record-top' },
-      h('label', { class: 'field' }, h('span', {}, 'Date'),
+      h('div', { class: 'date-time' },
+        h('label', { class: 'field' }, h('span', {}, 'Date'),
+          h('input', {
+            type: 'date', class: 'date-input', value: draft.date, required: true,
+            oninput: (e) => { if (e.target.value) { draft.date = e.target.value; changed(); } },
+          })),
+        h('label', { class: 'field' }, h('span', {}, 'Time'),
+          h('input', {
+            type: 'time', class: 'date-input', value: draft.time,
+            oninput: (e) => { draft.time = e.target.value; changed(); },
+          }))),
+      h('label', { class: 'field' }, h('span', {}, 'Location (optional)'),
         h('input', {
-          type: 'date', class: 'date-input', value: draft.date, required: true,
-          oninput: (e) => { if (e.target.value) { draft.date = e.target.value; changed(); } },
-        })),
+          type: 'text', list: 'past-locations', placeholder: 'e.g. Gym, Home', value: draft.location,
+          autocomplete: 'off',
+          oninput: (e) => { draft.location = e.target.value; changed(); },
+        }),
+        h('datalist', { id: 'past-locations' }, pastLocations.map((l) => h('option', { value: l })))),
       h('label', { class: 'field' }, h('span', {}, 'Note (optional)'),
         h('textarea', {
           rows: 2, placeholder: 'How did it go?', value: draft.note,
@@ -138,11 +168,24 @@ function entryCard(entry, index) {
   const ex = exercisesById.get(entry.exerciseId);
   const muscles = ex ? ex.muscleGroupIds.map((id) => muscleGroupsById.get(id)).filter(Boolean) : [];
 
+  const name = ex ? ex.name : 'this exercise';
+  const count = draft.entries.length;
+
   const remove = () => {
-    if (!confirm(`Remove ${ex ? ex.name : 'this exercise'} from the session?`)) return;
+    if (!confirm(`Remove ${name} from the session?`)) return;
     draft.entries.splice(index, 1);
     changed();
     build();
+  };
+
+  /** Move this exercise up (-1) or down (+1) in the session. */
+  const move = (dir) => {
+    const [item] = draft.entries.splice(index, 1);
+    draft.entries.splice(index + dir, 0, item);
+    changed();
+    build();
+    // Keep the moved card in view so repeated taps are easy.
+    root.querySelector(`#entries .card[data-index="${index + dir}"]`)?.scrollIntoView({ block: 'nearest' });
   };
 
   return h('section', { class: 'card', 'data-index': index },
@@ -152,10 +195,36 @@ function entryCard(entry, index) {
         h('div', { class: 'tags' },
           h('span', { class: `tag ${entry.type}` }, entry.type === 'cardio' ? 'Cardio' : 'Strength'),
           muscles.map((m) => h('span', { class: 'tag' }, m.name)))),
-      h('button', { class: 'icon-btn', 'aria-label': 'Remove exercise', onclick: remove }, '×')),
+      count > 1 && h('button', {
+        class: 'icon-btn move-btn', 'aria-label': `Move ${name} up`, disabled: index === 0, onclick: () => move(-1),
+      }, '↑'),
+      count > 1 && h('button', {
+        class: 'icon-btn move-btn', 'aria-label': `Move ${name} down`, disabled: index === count - 1, onclick: () => move(1),
+      }, '↓'),
+      h('button', { class: 'icon-btn', 'aria-label': `Remove ${name}`, onclick: remove }, '×')),
     entry.lastInfo && h('p', { class: 'muted small' }, entry.lastInfo),
     entry.type === 'cardio' ? cardioFields(entry) : strengthFields(entry),
+    noteField(entry, index),
   );
+}
+
+/** Optional note per exercise: a "+ Note" button that opens a text field. */
+function noteField(entry, index) {
+  if (!entry.note && !entry.showNote) {
+    return h('button', {
+      class: 'btn-ghost small note-toggle',
+      onclick: () => {
+        entry.showNote = true;
+        build();
+        root.querySelector(`#entries .card[data-index="${index}"] textarea`)?.focus();
+      },
+    }, '+ Note');
+  }
+  return h('label', { class: 'field', style: 'margin-top:10px' }, h('span', {}, 'Exercise note (optional)'),
+    h('textarea', {
+      rows: 2, value: entry.note || '', placeholder: 'e.g. felt easy, try more weight next time',
+      oninput: (e) => { entry.note = e.target.value; changed(); },
+    }));
 }
 
 /** Weight × reps rows plus "Add set". */
@@ -184,14 +253,11 @@ function strengthFields(entry) {
     h('button', { class: 'btn btn-block', onclick: addSet }, '+ Add set'));
 }
 
-/** Duration and intensity inputs. */
+/** Duration, intensity, distance and laps inputs (all optional). */
 function cardioFields(entry) {
   return h('div', { class: 'cardio-grid' },
-    h('label', { class: 'field' }, h('span', {}, 'Duration'),
-      unitInput('min', entry.duration, 'decimal', 'Duration in minutes', (v) => { entry.duration = v; })),
-    h('label', { class: 'field' }, h('span', {}, 'Intensity level'),
-      unitInput('lvl', entry.intensity, 'decimal', 'Intensity level', (v) => { entry.intensity = v; })),
-  );
+    CARDIO_FIELDS.map(([key, label, unit, inputmode]) => h('label', { class: 'field' }, h('span', {}, label),
+      unitInput(unit, entry[key] ?? '', inputmode, `${label} (optional)`, (v) => { entry[key] = v; }))));
 }
 
 /** Number input with a unit shown inside it. */
@@ -214,18 +280,26 @@ async function save() {
 
   for (const entry of draft.entries) {
     const name = exercisesById.get(entry.exerciseId)?.name || 'An exercise';
+    // Anything typed into a number field must be a valid, non-negative number.
+    const number = (raw, label) => {
+      const n = toNumber(raw);
+      if ((raw ?? '').trim() !== '' && (n == null || n < 0)) errors.push(`${name}: “${raw}” is not a valid ${label}.`);
+      return n;
+    };
+    const note = (entry.note || '').trim();
     if (entry.type === 'cardio') {
-      const duration = toNumber(entry.duration);
-      if (duration == null || duration <= 0) errors.push(`${name}: enter the duration.`);
-      entries.push({ exerciseId: entry.exerciseId, type: 'cardio', duration, intensity: toNumber(entry.intensity) });
+      const saved = { exerciseId: entry.exerciseId, type: 'cardio' };
+      for (const [key, label] of CARDIO_FIELDS) saved[key] = number(entry[key], label.toLowerCase());
+      if (note) saved.note = note;
+      entries.push(saved);
     } else {
       // Ignore completely empty set rows.
       const sets = entry.sets
-        .map((s) => ({ weight: toNumber(s.weight), reps: toNumber(s.reps) }))
+        .map((s) => ({ weight: number(s.weight, 'weight'), reps: number(s.reps, 'number of reps') }))
         .filter((s) => s.weight != null || s.reps != null);
       if (!sets.length) errors.push(`${name}: add at least one set.`);
       if (sets.some((s) => s.reps == null || s.reps <= 0)) errors.push(`${name}: enter reps for every set.`);
-      entries.push({ exerciseId: entry.exerciseId, type: 'strength', sets });
+      entries.push({ exerciseId: entry.exerciseId, type: 'strength', sets, ...(note && { note }) });
     }
   }
   if (!entries.length) errors.push('Add at least one exercise.');
@@ -237,6 +311,8 @@ async function save() {
   const id = await put('sessions', {
     id: editingId ?? undefined,
     date: draft.date,
+    time: draft.time || null,
+    location: draft.location.trim(),
     note: draft.note.trim(),
     entries,
     createdAt: existing ? existing.createdAt : now,
@@ -268,9 +344,9 @@ async function discard() {
 async function addEntry(exercise) {
   const last = await getLastEntry(exercise.id, draft.editingId);
   const prev = last && last.entry.type === exercise.type ? last.entry : null;
-  const entry = prev ? toDraftEntry(prev) : (exercise.type === 'cardio'
-    ? { exerciseId: exercise.id, type: 'cardio', duration: '', intensity: '' }
-    : { exerciseId: exercise.id, type: 'strength', sets: [{ weight: '', reps: '' }] });
+  const entry = prev ? toDraftEntry(prev, false) : (exercise.type === 'cardio'
+    ? { exerciseId: exercise.id, type: 'cardio', note: '', ...Object.fromEntries(CARDIO_FIELDS.map(([key]) => [key, ''])) }
+    : { exerciseId: exercise.id, type: 'strength', note: '', sets: [{ weight: '', reps: '' }] });
   entry.exerciseId = exercise.id;
   if (prev) entry.lastInfo = `Last time (${formatDate(last.session.date, { day: 'numeric', month: 'short' })}): ${entrySummary(prev)}`;
 

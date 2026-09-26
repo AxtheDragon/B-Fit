@@ -5,6 +5,7 @@
  *   #/               Record session (start screen)
  *   #/history        Session list with filters
  *   #/session/12     One session (view / edit / delete)
+ *   #/stats          Activity graph + statistics
  *   #/exercises      Exercise list
  *   #/exercise/3     Progress for one exercise
  *   #/settings       Backup (export / import) and muscle groups
@@ -12,6 +13,7 @@
 import { openDB } from './db.js';
 import * as record from './record.js';
 import * as history from './history.js';
+import * as stats from './stats.js';
 import * as exercises from './exercises.js';
 import * as settings from './settings.js';
 
@@ -21,6 +23,7 @@ const routes = [
   { pattern: /^\/?$/, nav: 'record', screen: record.render, leave: record.leave },
   { pattern: /^\/history$/, nav: 'history', screen: history.renderList },
   { pattern: /^\/session\/(\d+)$/, nav: 'history', screen: history.renderDetail },
+  { pattern: /^\/stats$/, nav: 'stats', screen: stats.render },
   { pattern: /^\/exercises$/, nav: 'exercises', screen: exercises.renderList },
   { pattern: /^\/exercise\/(\d+)$/, nav: 'exercises', screen: exercises.renderDetail },
   { pattern: /^\/settings$/, nav: 'settings', screen: settings.render },

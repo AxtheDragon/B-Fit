@@ -5,9 +5,9 @@
  *  - A request is answered from the cache immediately (fast, works offline).
  *  - In the background the file is fetched again and the cache updated,
  *    so the next app start picks up a new version after a deploy.
- * Bump CACHE_VERSION when the list of files changes.
+ * Bump CACHE_VERSION with every release (see js/version.js).
  */
-const CACHE_VERSION = 'bfit-v1';
+const CACHE_VERSION = 'bfit-v1.1';
 
 const APP_SHELL = [
   './',
@@ -22,6 +22,9 @@ const APP_SHELL = [
   'js/exercises.js',
   'js/settings.js',
   'js/chart.js',
+  'js/stats.js',
+  'js/filters.js',
+  'js/version.js',
   'icons/icon.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',

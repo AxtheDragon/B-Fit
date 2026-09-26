@@ -228,6 +228,19 @@ a.card:active { background: var(--surface-2); }
   font-style: normal; font-size: .85rem; color: var(--muted); pointer-events: none;
 }
 .cardio-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.date-time { display: grid; grid-template-columns: 3fr 2fr; gap: 10px; }
+
+/* Reorder buttons in an exercise card are a bit narrower than other icon buttons. */
+.icon-btn.move-btn { width: 40px; font-size: 1.2rem; }
+.icon-btn:disabled { opacity: .25; }
+.note-toggle { min-height: 40px; padding: 6px 0; margin-top: 6px; font-size: .9rem; }
+.entry-note { color: var(--muted); font-size: .88rem; font-style: italic; margin: 4px 0 0; }
+table.data td.entry-note { padding-top: 0; }
+table.data tr.has-note td { border-bottom: none; }
+.version-badge {
+  font-size: .85rem; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+}
 
 .empty {
   text-align: center;
@@ -307,11 +320,57 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 }
 .chart-title { font-weight: 700; font-size: .95rem; }
 
+.chart .bar { fill: var(--accent); }
+.chart .bar.active { fill: var(--text); }
+
+/* ---------- Stats: activity graph ---------- */
+
+:root { --cell: 14px; --cell-gap: 3px; }
+.activity-scroll { overflow-x: auto; margin: 8px -4px 0; padding: 0 4px 6px; scrollbar-width: thin; }
+.activity-inner { display: inline-block; min-width: 100%; }
+.activity-months { display: flex; gap: var(--cell-gap); margin-left: 32px; height: 16px; }
+.activity-months span {
+  flex: none; width: var(--cell); overflow: visible; white-space: nowrap;
+  font-size: 11px; color: var(--muted);
+}
+.activity-body { display: flex; }
+.activity-weekdays { display: grid; grid-auto-rows: var(--cell); gap: var(--cell-gap); width: 32px; flex: none; }
+.activity-weekdays span { font-size: 10px; line-height: var(--cell); color: var(--muted); }
+.activity-grid { display: flex; gap: var(--cell-gap); }
+.activity-week { display: grid; grid-auto-rows: var(--cell); gap: var(--cell-gap); }
+.day {
+  display: inline-block; width: var(--cell); height: var(--cell); min-height: 0;
+  padding: 0; border: none; border-radius: 3px; background: var(--surface-2);
+}
+button.day { cursor: pointer; }
+.day.future { background: transparent; }
+.day.level-1 { background: color-mix(in srgb, var(--accent) 50%, var(--surface)); }
+.day.level-2 { background: var(--accent); }
+.day.today { outline: 1.5px solid var(--muted); outline-offset: 1px; }
+.day.selected { outline: 2px solid var(--text); outline-offset: 1px; }
+button.day:active { transform: none; }
+.activity-legend { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.activity-legend .day { margin-left: 6px; }
+.activity-legend .day:first-child { margin-left: 0; }
+.activity-info { margin-top: 10px; min-height: 40px; }
+.activity-info b { color: var(--text); }
+
+/* ---------- Stats: tiles and lists ---------- */
+
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 12px; }
+.stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.stat-value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-label { font-size: .78rem; color: var(--muted); }
+.top-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.top-list li + li { margin-top: 10px; }
+.top-list a { color: var(--text); font-weight: 600; text-decoration: none; min-height: 32px; display: flex; align-items: center; }
+.top-bar { height: 6px; border-radius: 0 3px 3px 0; background: var(--accent); margin-top: 2px; }
+
 /* ---------- Bottom navigation ---------- */
 
 .bottom-nav {
   position: fixed; left: 0; right: 0; bottom: 0;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   height: calc(var(--nav-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--surface);

@@ -99,7 +99,7 @@ export async function renderDetail(container, id) {
 /** Charts need at least two points to show a trend. */
 function chartCard(charts) {
   const usable = charts.filter(([, , points]) => points.length >= 2);
-  if (!usable.length) return h('p', { class: 'muted small' }, 'The progress chart appears after two sessions.');
+  if (!usable.length) return h('p', { class: 'muted small' }, 'The progress chart appears once you have two entries.');
   return h('div', { class: 'card stack' }, usable.map(([title, unit, points]) => lineChart(title, unit, points)));
 }
 
@@ -109,6 +109,7 @@ function renderStrength(container, history) {
     const weights = sets.map((s) => s.weight).filter((w) => w != null);
     return {
       session,
+      entries,
       sets,
       topWeight: weights.length ? Math.max(...weights) : null,
       maxReps: Math.max(0, ...sets.map((s) => s.reps || 0)),
@@ -128,23 +129,41 @@ function renderStrength(container, history) {
       h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', {}, 'Sets'), h('th', { class: 'num' }, weighted ? 'Top' : 'Best'))),
       h('tbody', {}, [...rows].reverse().map((r) => h('tr', {},
         h('td', {}, h('a', { href: `#/session/${r.session.id}` }, formatDate(r.session.date, { day: 'numeric', month: 'short', year: '2-digit' }))),
-        h('td', {}, r.sets.map(formatSet).join(', ')),
+        h('td', {}, r.sets.map(formatSet).join(', '), noteLines(r.entries)),
         h('td', { class: 'num' }, weighted ? (r.topWeight != null ? `${r.topWeight} kg` : '–') : `${r.maxReps}`)))))));
 }
 
+/** Cardio fields that can be charted: [key, chart title, unit, table header]. */
+const CARDIO_METRICS = [
+  ['duration', 'Duration', 'min', 'Min'],
+  ['intensity', 'Intensity', 'level', 'Lvl'],
+  ['distance', 'Distance', 'km', 'km'],
+  ['laps', 'Laps', 'laps', 'Laps'],
+];
+
 function renderCardio(container, history) {
   const rows = history.flatMap(({ session, entries }) => entries.map((e) => ({ session, entry: e })));
-  add(container, chartCard([
-      ['Duration', 'min', rows.map((r) => ({ date: r.session.date, value: r.entry.duration }))],
-      ['Intensity', 'level', rows.filter((r) => r.entry.intensity != null).map((r) => ({ date: r.session.date, value: r.entry.intensity }))],
-    ]),
+  // All cardio fields are optional: only chart / show the ones that were ever entered.
+  const used = CARDIO_METRICS.filter(([key]) => rows.some((r) => r.entry[key] != null));
+
+  add(container,
+    chartCard(used.map(([key, title, unit]) => [title, unit,
+      rows.filter((r) => r.entry[key] != null).map((r) => ({ date: r.session.date, value: r.entry[key] }))])),
     h('h2', {}, 'All entries'),
     h('div', { class: 'card' }, h('table', { class: 'data' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', { class: 'num' }, 'Minutes'), h('th', { class: 'num' }, 'Level'))),
-      h('tbody', {}, [...rows].reverse().map((r) => h('tr', {},
-        h('td', {}, h('a', { href: `#/session/${r.session.id}` }, formatDate(r.session.date, { day: 'numeric', month: 'short', year: '2-digit' }))),
-        h('td', { class: 'num' }, r.entry.duration),
-        h('td', { class: 'num' }, r.entry.intensity ?? '–')))))));
+      h('thead', {}, h('tr', {}, h('th', {}, 'Date'), used.map(([, , , header]) => h('th', { class: 'num' }, header)))),
+      h('tbody', {}, [...rows].reverse().map((r) => [
+        h('tr', { class: r.entry.note ? 'has-note' : null },
+          h('td', {}, h('a', { href: `#/session/${r.session.id}` }, formatDate(r.session.date, { day: 'numeric', month: 'short', year: '2-digit' }))),
+          used.map(([key]) => h('td', { class: 'num' }, r.entry[key] ?? '–'))),
+        // Exercise note on its own row under the values
+        r.entry.note && h('tr', {}, h('td', { colspan: used.length + 1, class: 'entry-note' }, r.entry.note)),
+      ])))));
+}
+
+/** Exercise notes of one session, shown under the sets. */
+function noteLines(entries) {
+  return entries.filter((e) => e.note).map((e) => h('div', { class: 'entry-note' }, e.note));
 }
 
 /** Collapsible "Edit exercise" section: rename, muscle groups, delete. */

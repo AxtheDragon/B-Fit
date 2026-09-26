@@ -53,7 +53,17 @@ export function add(el, ...children) {
 
 /** Today's date as "YYYY-MM-DD" in local time. */
 export function todayISO() {
+  return toISODate(new Date());
+}
+
+/** Current time as "HH:MM". */
+export function nowTime() {
   const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Date as "YYYY-MM-DD" in local time. */
+export function toISODate(d) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
@@ -88,12 +98,16 @@ export function formatSet(set) {
   return set.weight != null ? `${set.weight} kg × ${set.reps}` : `${set.reps} reps`;
 }
 
-/** One-line summary of a session entry, e.g. "3 sets · top 60 kg" or "20 min · level 8". */
+/** One-line summary of a session entry, e.g. "3 sets · top 60 kg" or "20 min · level 8 · 5 km". */
 export function entrySummary(entry) {
   if (entry.type === 'cardio') {
-    const parts = [`${entry.duration} min`];
+    // Every cardio field is optional, so only list the ones that were entered.
+    const parts = [];
+    if (entry.duration != null) parts.push(`${entry.duration} min`);
     if (entry.intensity != null) parts.push(`level ${entry.intensity}`);
-    return parts.join(' · ');
+    if (entry.distance != null) parts.push(`${entry.distance} km`);
+    if (entry.laps != null) parts.push(`${entry.laps} lap${entry.laps === 1 ? '' : 's'}`);
+    return parts.join(' · ') || 'done';
   }
   const n = entry.sets.length;
   const weights = entry.sets.map((s) => s.weight).filter((w) => w != null);
@@ -101,9 +115,17 @@ export function entrySummary(entry) {
   return `${n} set${n === 1 ? '' : 's'}${top}`;
 }
 
-/** Sort sessions newest first (by date, then by creation time). */
+/** Sort sessions newest first (by date, then time, then creation time). */
 export function sortSessionsDesc(sessions) {
-  return sessions.sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0));
+  return sessions.sort((a, b) =>
+    b.date.localeCompare(a.date) ||
+    (b.time || '').localeCompare(a.time || '') ||
+    (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+/** "Fri, 25 Sep 2026 · 18:30 · Gym" – the parts that exist. */
+export function sessionHeading(session, dateOpts) {
+  return [formatDate(session.date, dateOpts), session.time, session.location].filter(Boolean).join(' · ');
 }
 
 /** Show a short message at the bottom of the screen. */

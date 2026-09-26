@@ -4,12 +4,15 @@
  * Object stores:
  *   muscleGroups  { id, name, category: 'upper'|'lower'|'core', builtin? }
  *   exercises     { id, name, type: 'strength'|'cardio', muscleGroupIds: [id] }
- *   sessions      { id, date: 'YYYY-MM-DD', note, entries: [Entry], createdAt, updatedAt }
- *                 Entry (strength) = { exerciseId, type: 'strength', sets: [{ weight: number|null, reps: number }] }
- *                 Entry (cardio)   = { exerciseId, type: 'cardio', duration: number, intensity: number|null }
+ *   sessions      { id, date: 'YYYY-MM-DD', time: 'HH:MM'|null, location, note, entries: [Entry], createdAt, updatedAt }
+ *                 Entry (strength) = { exerciseId, type: 'strength', sets: [{ weight: number|null, reps: number }], note? }
+ *                 Entry (cardio)   = { exerciseId, type: 'cardio', duration, intensity, distance, laps, note? }
+ *                                    (all four cardio numbers are optional / null)
+ *   time, location and the entry notes were added in v1.1; older records simply lack them.
  *   meta          { key, value }  – currently only the autosaved draft (key 'draft')
  */
 import { sortSessionsDesc } from './util.js';
+import { APP_VERSION } from './version.js';
 
 const DB_NAME = 'bfit';
 const DB_VERSION = 1;
@@ -131,6 +134,7 @@ export async function exportAll() {
   return {
     app: 'B-Fit',
     format: 1,
+    appVersion: APP_VERSION,
     exportedAt: new Date().toISOString(),
     muscleGroups: await getAll('muscleGroups'),
     exercises: await getAll('exercises'),
