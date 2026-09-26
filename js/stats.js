@@ -188,7 +188,7 @@ function summaryTiles(workouts, start) {
   const sets = entries.filter((e) => e.type === 'strength').reduce((n, e) => n + e.sets.length, 0);
   const cardio = entries.filter((e) => e.type === 'cardio');
   const minutes = cardio.reduce((n, e) => n + (e.duration || 0), 0);
-  const km = cardio.reduce((n, e) => n + (e.distance || 0), 0);
+  const meters = cardio.reduce((n, e) => n + (e.distance || 0), 0);
   const round = (n) => Math.round(n * 10) / 10;
 
   const tile = (value, label) => h('div', { class: 'stat-tile' },
@@ -200,7 +200,10 @@ function summaryTiles(workouts, start) {
     tile(days, 'Training days'),
     tile(sets, 'Strength sets'),
     tile(round(minutes), 'Cardio minutes'),
-    km > 0 && tile(round(km), 'Cardio km'));
+    // Distance is entered in metres; long totals read better in km.
+    meters > 0 && (meters >= 10000
+      ? tile(round(meters / 1000), 'Cardio km')
+      : tile(Math.round(meters), 'Cardio metres')));
 }
 
 /** Workouts per week (or per month for long periods) as a bar chart. */

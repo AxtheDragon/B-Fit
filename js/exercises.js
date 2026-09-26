@@ -137,7 +137,7 @@ function renderStrength(container, history) {
 const CARDIO_METRICS = [
   ['duration', 'Duration', 'min', 'Min'],
   ['intensity', 'Intensity', 'level', 'Lvl'],
-  ['distance', 'Distance', 'km', 'km'],
+  ['distance', 'Distance', 'm', 'm'],
   ['laps', 'Laps', 'laps', 'Laps'],
 ];
 

@@ -98,14 +98,14 @@ export function formatSet(set) {
   return set.weight != null ? `${set.weight} kg × ${set.reps}` : `${set.reps} reps`;
 }
 
-/** One-line summary of a session entry, e.g. "3 sets · top 60 kg" or "20 min · level 8 · 5 km". */
+/** One-line summary of a session entry, e.g. "3 sets · top 60 kg" or "20 min · level 8 · 5000 m". */
 export function entrySummary(entry) {
   if (entry.type === 'cardio') {
     // Every cardio field is optional, so only list the ones that were entered.
     const parts = [];
     if (entry.duration != null) parts.push(`${entry.duration} min`);
     if (entry.intensity != null) parts.push(`level ${entry.intensity}`);
-    if (entry.distance != null) parts.push(`${entry.distance} km`);
+    if (entry.distance != null) parts.push(`${entry.distance} m`);
     if (entry.laps != null) parts.push(`${entry.laps} lap${entry.laps === 1 ? '' : 's'}`);
     return parts.join(' · ') || 'done';
   }

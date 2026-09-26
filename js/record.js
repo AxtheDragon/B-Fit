@@ -58,16 +58,17 @@ export async function leave() {
 const CARDIO_FIELDS = [
   ['duration', 'Duration', 'min', 'decimal'],
   ['intensity', 'Intensity level', 'lvl', 'decimal'],
-  ['distance', 'Distance', 'km', 'decimal'],
+  ['distance', 'Distance', 'm', 'decimal'],
   ['laps', 'No. of laps', 'laps', 'numeric'],
 ];
 
 /**
  * Convert a saved session entry into a draft entry (numbers -> strings).
- * `withNote` is false when prefilling from last time: notes are not copied.
+ * Also used to prefill from last time, so the exercise note carries over
+ * and can hold hints for next time.
  */
-function toDraftEntry(entry, withNote = true) {
-  const base = { exerciseId: entry.exerciseId, type: entry.type, note: withNote ? entry.note || '' : '' };
+function toDraftEntry(entry) {
+  const base = { exerciseId: entry.exerciseId, type: entry.type, note: entry.note || '' };
   if (entry.type === 'cardio') {
     for (const [key] of CARDIO_FIELDS) base[key] = numToStr(entry[key]);
     return base;
@@ -220,9 +221,9 @@ function noteField(entry, index) {
       },
     }, '+ Note');
   }
-  return h('label', { class: 'field', style: 'margin-top:10px' }, h('span', {}, 'Exercise note (optional)'),
+  return h('label', { class: 'field', style: 'margin-top:10px' }, h('span', {}, 'Exercise note (carries over to next time)'),
     h('textarea', {
-      rows: 2, value: entry.note || '', placeholder: 'e.g. felt easy, try more weight next time',
+      rows: 2, value: entry.note || '', placeholder: 'Hints for next time, e.g. seat height 4, try 62.5 kg',
       oninput: (e) => { entry.note = e.target.value; changed(); },
     }));
 }
@@ -344,7 +345,7 @@ async function discard() {
 async function addEntry(exercise) {
   const last = await getLastEntry(exercise.id, draft.editingId);
   const prev = last && last.entry.type === exercise.type ? last.entry : null;
-  const entry = prev ? toDraftEntry(prev, false) : (exercise.type === 'cardio'
+  const entry = prev ? toDraftEntry(prev) : (exercise.type === 'cardio'
     ? { exerciseId: exercise.id, type: 'cardio', note: '', ...Object.fromEntries(CARDIO_FIELDS.map(([key]) => [key, ''])) }
     : { exerciseId: exercise.id, type: 'strength', note: '', sets: [{ weight: '', reps: '' }] });
   entry.exerciseId = exercise.id;

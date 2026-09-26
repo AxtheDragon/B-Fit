@@ -8,6 +8,7 @@
  *                 Entry (strength) = { exerciseId, type: 'strength', sets: [{ weight: number|null, reps: number }], note? }
  *                 Entry (cardio)   = { exerciseId, type: 'cardio', duration, intensity, distance, laps, note? }
  *                                    (all four cardio numbers are optional / null)
+ *                                    (distance in metres)
  *   time, location and the entry notes were added in v1.1; older records simply lack them.
  *   meta          { key, value }  – currently only the autosaved draft (key 'draft')
  */

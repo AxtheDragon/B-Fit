@@ -2,8 +2,8 @@
 
 A simple fitness tracker you can install on your phone. It's a Progressive Web App built with plain HTML, CSS and JavaScript. There's no framework and no build step.
 
-- Record strength sets (kg × reps) and cardio exercises (minutes, intensity level, distance, laps – all optional)
-- Sessions have a date, time, optional location and note; each exercise can have its own note
+- Record strength sets (kg × reps) and cardio exercises (minutes, intensity level, distance in m, laps – all optional)
+- Sessions have a date, time, optional location and note; each exercise can have its own note, which carries over to the next time as a hint
 - Exercises in a session can be reordered
 - Values from the last time you did an exercise are filled in for you, and a new set copies the previous one
 - Unsaved input is autosaved, so closing the app loses nothing
