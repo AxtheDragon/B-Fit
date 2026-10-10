@@ -101,8 +101,10 @@ function activityCard(workouts, start) {
   const today = todayISO();
   const info = h('div', { class: 'activity-info muted small' }, 'Tap a day to see its sessions.');
   const grid = h('div', { class: 'activity-grid', role: 'grid', 'aria-label': 'Activity by day' });
-  // The first cell is a sticky blank corner above the weekday labels, so month
-  // names scrolling to the left slide underneath it.
+  // Two header rows: years on top, month names below. The first cell of each
+  // is a sticky blank corner above the weekday labels, so labels scrolling to
+  // the left slide underneath it.
+  const yearRow = h('div', { class: 'activity-months activity-years', 'aria-hidden': 'true' }, h('span', { class: 'activity-corner' }));
   const monthRow = h('div', { class: 'activity-months', 'aria-hidden': 'true' }, h('span', { class: 'activity-corner' }));
   let selected = null;
 
@@ -121,28 +123,41 @@ function activityCard(workouts, start) {
   };
 
   let lastMonth = -1;
-  let lastLabel = null; // last label shown: { el, at: week index, room: columns it needs }
+  let lastMonthAt = -99;  // week index of the last month label shown
+  let firstYear = null;   // year label above the first column
   let weeks = 0;
   for (let week = new Date(start); toISODate(week) <= today; week = addDays(week, 7), weeks++) {
-    // Month label above the first week of each month. Labels need ~3 columns
-    // of room (4 with a year), so one that would be too close to the previous
-    // is left out.
-    // January and the very first label also show the year ("Jan 2027"), so
-    // views spanning several years stay readable; a January label always wins
-    // over a previous label that is too close, so the year is never dropped.
-    const label = h('span', {});
+    const month = h('span', {});
+    const year = h('span', {});
     if (week.getMonth() !== lastMonth) {
       lastMonth = week.getMonth();
-      const withYear = lastMonth === 0 || !lastLabel;
-      const tooClose = lastLabel && weeks - lastLabel.at < lastLabel.room;
-      if (tooClose && withYear) lastLabel.el.textContent = '';
-      if (!tooClose || withYear) {
-        label.textContent = week.toLocaleDateString(undefined,
-          withYear ? { month: 'short', year: 'numeric' } : { month: 'short' });
-        lastLabel = { el: label, at: weeks, room: withYear ? 4 : 3 };
+      // Month label above the first week of each month. Labels need ~3
+      // columns of room, so one that would be too close is left out – except
+      // when the previous one is the first column: that is only a partial
+      // month, so its label gives way instead.
+      if (weeks - lastMonthAt < 3 && lastMonthAt === 0) {
+        monthRow.children[1].textContent = ''; // children[0] is the corner
+        lastMonthAt = -99;
+      }
+      if (weeks - lastMonthAt >= 3) {
+        month.textContent = week.toLocaleDateString(undefined, { month: 'short' });
+        lastMonthAt = weeks;
+      }
+      // The year goes in the row above, over the first week of January.
+      if (lastMonth === 0) {
+        year.textContent = week.getFullYear();
+        // A January right at the start already shows the year: drop the
+        // first column's year so the two don't overlap.
+        if (firstYear && weeks < 3) firstYear.textContent = '';
       }
     }
-    monthRow.append(label);
+    // The first column also shows its year, so the start of the graph is clear.
+    if (weeks === 0 && !year.textContent) {
+      year.textContent = week.getFullYear();
+      firstYear = year;
+    }
+    yearRow.append(year);
+    monthRow.append(month);
 
     const column = h('div', { class: 'activity-week', role: 'row' });
     for (let i = 0; i < 7; i++) {
@@ -162,6 +177,7 @@ function activityCard(workouts, start) {
 
   const scroller = h('div', { class: 'activity-scroll' },
     h('div', { class: 'activity-inner' },
+      yearRow,
       monthRow,
       h('div', { class: 'activity-body' },
         h('div', { class: 'activity-weekdays', 'aria-hidden': 'true' },

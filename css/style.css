@@ -333,6 +333,8 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
   flex: none; width: var(--cell); overflow: visible; white-space: nowrap;
   font-size: 11px; color: var(--muted);
 }
+.activity-years { height: 14px; }
+.activity-years span { font-weight: 700; }
 .activity-body { display: flex; }
 /* Weekday labels (and the corner above them) stay fixed on the left while the
    weeks scroll sideways underneath. The card background hides scrolled cells. */
