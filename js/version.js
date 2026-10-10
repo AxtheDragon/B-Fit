@@ -14,6 +14,6 @@
  *        in Settings, calendar-year view (Jan–Dec) with year picker;
  *        "1 year" renamed to "12 months"; Exercises page sorted A–Z
  *   1.4.1  exercises can be marked as warm-up; warm-ups are left out of
- *          the activity graph colours (in development)
+ *          the activity graph colours
  */
 export const APP_VERSION = '1.4.1';
