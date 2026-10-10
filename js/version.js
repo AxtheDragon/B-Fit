@@ -12,6 +12,6 @@
  *   1.4  activity graph: year row above the month labels, days coloured by
  *        category (split when several were trained), colours customizable
  *        in Settings, calendar-year view (Jan–Dec) with year picker;
- *        "1 year" renamed to "12 months" (in development)
+ *        "1 year" renamed to "12 months"; Exercises page sorted A–Z
  */
 export const APP_VERSION = '1.4';
