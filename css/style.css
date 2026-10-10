@@ -352,12 +352,14 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .activity-weekdays {
   display: grid; grid-auto-rows: var(--cell); gap: var(--cell-gap); width: 32px; flex: none;
   position: sticky; left: 0; z-index: 1; background: var(--surface);
+  box-shadow: -2px 0 0 var(--surface); /* covers sub-pixel slivers of scrolled squares */
 }
 .activity-months span.activity-corner {
   /* As wide as the weekday column; the negative margin cancels the flex gap
      so the first month label sits exactly above the first week. */
   width: 32px; margin-right: calc(-1 * var(--cell-gap));
   position: sticky; left: 0; z-index: 1; background: var(--surface);
+  box-shadow: -2px 0 0 var(--surface);
 }
 .activity-weekdays span { font-size: 10px; line-height: var(--cell); color: var(--muted); }
 .activity-grid { display: flex; gap: var(--cell-gap); }
@@ -367,7 +369,16 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
   padding: 0; border: none; border-radius: 3px; background: var(--surface-2);
 }
 button.day { cursor: pointer; }
-.day.future { background: transparent; }
+.day.outside { background: transparent; }
+/* Days still to come (rest of this week / this year): faint, so a calendar
+   year keeps its full Jan–Dec shape. */
+.day.future { opacity: .4; }
+
+/* Stats: ‹ 2026 › year picker for the calendar-year view */
+.year-stepper { display: flex; align-items: center; justify-content: center; gap: 8px; margin: -4px 0 12px; }
+.year-stepper .icon-btn { font-size: 1.8rem; color: var(--accent); }
+.year-stepper .icon-btn:disabled { color: var(--muted); }
+.year-value { font-size: 1.25rem; font-weight: 700; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
 /* A trained day is split into equal slices, stacked in rows; --slices (set in
    stats.js) switches to 2 columns for quarters. The 1px gap between slices
    shows the card background. */

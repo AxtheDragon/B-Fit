@@ -8,7 +8,7 @@ A simple fitness tracker you can install on your phone. It's a Progressive Web A
 - Values from the last time you did an exercise are filled in for you, and a new set copies the previous one
 - Unsaved input is autosaved, so closing the app loses nothing
 - History with category and muscle-group filters, a progress chart for each exercise
-- Stats: activity graph of training days (coloured by category, colours customizable in Settings), workouts per week/month, totals and most frequent exercises
+- Stats: activity graph of training days (coloured by category, colours customizable in Settings), workouts per week/month, totals and most frequent exercises – for the last 4 weeks to 12 months, a calendar year (Jan–Dec, to compare years) or everything
 - Everything is stored on the device in IndexedDB, with no account and no server
 - Works offline and can be installed with "Add to Home screen"
 - Export and import a JSON backup under **Settings** (includes custom colours)

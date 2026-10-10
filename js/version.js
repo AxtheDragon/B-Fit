@@ -11,6 +11,7 @@
  *   1.3  record page: repeat a previous session as a template
  *   1.4  activity graph: year row above the month labels, days coloured by
  *        category (split when several were trained), colours customizable
- *        in Settings (in development)
+ *        in Settings, calendar-year view (Jan–Dec) with year picker;
+ *        "1 year" renamed to "12 months" (in development)
  */
 export const APP_VERSION = '1.4';

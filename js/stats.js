@@ -10,17 +10,20 @@ import { createFilter, matchingEntries, filterControls } from './filters.js';
 import { barChart } from './chart.js';
 import { ACTIVITY_CATEGORIES } from './colors.js'; // colours: CSS variables --cat-upper, ...
 
+/** Rolling periods end today; "year" is a calendar year (Jan–Dec) picked with ‹ ›. */
 const PERIODS = [
   ['4w', '4 weeks', 4],
   ['3m', '3 months', 13],
   ['6m', '6 months', 26],
-  ['1y', '1 year', 52],
+  ['1y', '12 months', 52],
+  ['year', 'Year', null],
   ['all', 'All', null],
 ];
 
 // Remembered while the app is open.
 const filter = createFilter();
 let period = '3m';
+let selectedYear = new Date().getFullYear(); // for the "Year" period
 
 /* ---------- Date helpers (weeks start on Monday) ---------- */
 
@@ -36,13 +39,37 @@ function weekStart(date) {
   return addDays(d, -((d.getDay() + 6) % 7));
 }
 
-/** First Monday of the period: N weeks back, or the week of the first session for "All". */
-function periodStart(sessions) {
+/**
+ * The selected period as a date range:
+ *   start  Monday of the first week shown in the graph (a Date)
+ *   from   first day that counts ("YYYY-MM-DD"); later than `start` only for
+ *          a calendar year that doesn't begin on a Monday
+ *   to     last day shown: today, or Dec 31 for a calendar year
+ *   end    last day that counts: `to`, but never after today
+ *   weeks  number of weeks counted (for "per week" averages); in the year
+ *          the records start, counted from the first session
+ *   year   true for a calendar year
+ */
+function periodRange(sessions) {
+  const today = todayISO();
   const thisWeek = weekStart(new Date());
+  if (period === 'year') {
+    const from = `${selectedYear}-01-01`;
+    const to = `${selectedYear}-12-31`;
+    const end = to < today ? to : today;
+    const firstSession = sessions[sessions.length - 1]?.date; // sessions are sorted newest first
+    const countFrom = firstSession && firstSession > from ? firstSession : from;
+    const days = (parseISODate(end) - parseISODate(countFrom)) / 864e5 + 1;
+    return { start: weekStart(parseISODate(from)), from, to, end, weeks: Math.max(1, days / 7), year: true };
+  }
   const weeks = PERIODS.find(([key]) => key === period)[2];
-  if (weeks) return addDays(thisWeek, -7 * (weeks - 1));
-  const first = sessions[sessions.length - 1]; // sessions are sorted newest first
-  return first ? weekStart(parseISODate(first.date)) : addDays(thisWeek, -7 * 11);
+  let start;
+  if (weeks) start = addDays(thisWeek, -7 * (weeks - 1));
+  else {
+    const first = sessions[sessions.length - 1]; // sessions are sorted newest first
+    start = first ? weekStart(parseISODate(first.date)) : addDays(thisWeek, -7 * 11);
+  }
+  return { start, from: toISODate(start), to: today, end: today, weeks: weeksBetween(start, new Date()), year: false };
 }
 
 /* ---------- Screen ---------- */
@@ -53,13 +80,32 @@ export async function render(container) {
   const groupsById = byId(groups);
   const content = h('div', {});
 
-  function update() {
-    const start = periodStart(sessions);
-    const startISO = toISODate(start);
-    const today = todayISO();
+  // Years that can be picked in the "Year" view: first session's year up to this year.
+  const thisYear = new Date().getFullYear();
+  const firstYear = sessions.length ? Math.min(thisYear, parseISODate(sessions[sessions.length - 1].date).getFullYear()) : thisYear;
+  selectedYear = Math.min(Math.max(selectedYear, firstYear), thisYear);
+
+  /** ‹ 2026 › stepper, shown while the "Year" period is selected. */
+  const yearStepper = () => {
+    const step = (d) => {
+      // Keep the same months in view, so stepping compares like with like.
+      const scroll = content.querySelector('.activity-scroll')?.scrollLeft;
+      selectedYear += d;
+      update(scroll);
+    };
+    return h('div', { class: 'year-stepper' },
+      h('button', { class: 'icon-btn', 'aria-label': 'Previous year', disabled: selectedYear <= firstYear, onclick: () => step(-1) }, '‹'),
+      h('span', { class: 'year-value', 'aria-live': 'polite' }, selectedYear),
+      h('button', { class: 'icon-btn', 'aria-label': 'Next year', disabled: selectedYear >= thisYear, onclick: () => step(1) }, '›'));
+  };
+
+  /** Re-render; `scrollLeft` keeps the activity graph's scroll position (year stepping). */
+  function update(scrollLeft = null) {
+    const range = periodRange(sessions);
+    range.scrollLeft = scrollLeft;
     // Matching sessions inside the period, each with only its matching entries.
     const workouts = sessions
-      .filter((s) => s.date >= startISO && s.date <= today)
+      .filter((s) => s.date >= range.from && s.date <= range.end)
       .map((s) => ({ session: s, entries: matchingEntries(s, filter, exercisesById, groupsById) }))
       .filter((w) => w.entries.length);
 
@@ -77,9 +123,10 @@ export async function render(container) {
     };
 
     setChildren(content,
-      activityCard(workouts, start, categoriesOf),
-      summaryTiles(workouts, start),
-      frequencyCard(workouts, start),
+      range.year && yearStepper(),
+      activityCard(workouts, range, categoriesOf),
+      summaryTiles(workouts, range),
+      frequencyCard(workouts, range),
       topExercises(workouts, exercisesById));
   }
 
@@ -105,7 +152,7 @@ export async function render(container) {
  * GitHub-style grid: one column per week (Mon–Sun), one square per day.
  * Days with a matching session are coloured. Tap a day to see what was done.
  */
-function activityCard(workouts, start, categoriesOf) {
+function activityCard(workouts, range, categoriesOf) {
   const byDate = new Map();       // date -> workouts that day
   const catsByDate = new Map();   // date -> Set of categories trained that day
   for (const w of workouts) {
@@ -147,11 +194,16 @@ function activityCard(workouts, start, categoriesOf) {
   let lastMonthAt = -99;  // week index of the last month label shown
   let firstYear = null;   // year label above the first column
   let weeks = 0;
-  for (let week = new Date(start); toISODate(week) <= today; week = addDays(week, 7), weeks++) {
+  let focusWeek = 0;      // column to scroll into view: today's week, or the last one
+  const fromDate = parseISODate(range.from);
+  for (let week = new Date(range.start); toISODate(week) <= range.to; week = addDays(week, 7), weeks++) {
     const month = h('span', {});
     const year = h('span', {});
-    if (week.getMonth() !== lastMonth) {
-      lastMonth = week.getMonth();
+    // Labels follow the column's first day inside the period (a calendar year's
+    // first column starts on Jan 1, even when that week began in December).
+    const labelDate = week < fromDate ? fromDate : week;
+    if (labelDate.getMonth() !== lastMonth) {
+      lastMonth = labelDate.getMonth();
       // Month label above the first week of each month. Labels need ~3
       // columns of room, so one that would be too close is left out – except
       // when the previous one is the first column: that is only a partial
@@ -161,12 +213,12 @@ function activityCard(workouts, start, categoriesOf) {
         lastMonthAt = -99;
       }
       if (weeks - lastMonthAt >= 3) {
-        month.textContent = week.toLocaleDateString(undefined, { month: 'short' });
+        month.textContent = labelDate.toLocaleDateString(undefined, { month: 'short' });
         lastMonthAt = weeks;
       }
       // The year goes in the row above, over the first week of January.
       if (lastMonth === 0) {
-        year.textContent = week.getFullYear();
+        year.textContent = labelDate.getFullYear();
         // A January right at the start already shows the year: drop the
         // first column's year so the two don't overlap.
         if (firstYear && weeks < 3) firstYear.textContent = '';
@@ -174,15 +226,18 @@ function activityCard(workouts, start, categoriesOf) {
     }
     // The first column also shows its year, so the start of the graph is clear.
     if (weeks === 0 && !year.textContent) {
-      year.textContent = week.getFullYear();
+      year.textContent = labelDate.getFullYear();
       firstYear = year;
     }
     yearRow.append(year);
     monthRow.append(month);
 
+    if (toISODate(week) <= range.end) focusWeek = weeks;
     const column = h('div', { class: 'activity-week', role: 'row' });
     for (let i = 0; i < 7; i++) {
       const iso = toISODate(addDays(week, i));
+      // Outside the period (before Jan 1 / after Dec 31): blank. Not yet happened: faint.
+      if (iso < range.from || iso > range.to) { column.append(h('span', { class: 'day outside' })); continue; }
       if (iso > today) { column.append(h('span', { class: 'day future' })); continue; }
       const count = byDate.get(iso)?.length || 0;
       const cats = dayCategories(iso);
@@ -212,11 +267,21 @@ function activityCard(workouts, start, categoriesOf) {
           ['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].map((d) => h('span', {}, d))),
         grid)));
   // Squares grow to fill the card for short periods (14–28px). Long periods
-  // keep 14px squares and scroll, starting at the most recent weeks.
+  // keep 14px squares and scroll so the current week (or, for a past year,
+  // its last week) is at the right edge – except when stepping between years,
+  // which keeps the previous scroll position.
+  let keepScroll = range.scrollLeft;
   new ResizeObserver(() => {
     const size = Math.floor((scroller.clientWidth - 40) / weeks) - 3;
     scroller.style.setProperty('--cell', `${Math.max(14, Math.min(28, size))}px`);
-    scroller.scrollLeft = scroller.scrollWidth;
+    const col = grid.children[focusWeek];
+    if (keepScroll != null) {
+      scroller.scrollLeft = keepScroll; // stepping between years: same months stay in view
+      keepScroll = null;
+    } else if (col) {
+      const right = col.getBoundingClientRect().right - scroller.getBoundingClientRect().left + scroller.scrollLeft;
+      scroller.scrollLeft = right - scroller.clientWidth + 8;
+    }
   }).observe(scroller);
 
   return h('section', { class: 'card' },
@@ -235,8 +300,8 @@ function weeksBetween(start, end) {
   return Math.round((weekStart(end) - start) / (7 * 864e5)) + 1;
 }
 
-function summaryTiles(workouts, start) {
-  const weeks = weeksBetween(start, new Date());
+function summaryTiles(workouts, range) {
+  const weeks = range.weeks;
   const days = new Set(workouts.map((w) => w.session.date)).size;
   const entries = workouts.flatMap((w) => w.entries);
   const sets = entries.filter((e) => e.type === 'strength').reduce((n, e) => n + e.sets.length, 0);
@@ -261,10 +326,11 @@ function summaryTiles(workouts, start) {
 }
 
 /** Workouts per week (or per month for long periods) as a bar chart. */
-function frequencyCard(workouts, start) {
-  const weeks = weeksBetween(start, new Date());
+function frequencyCard(workouts, range) {
+  const { start, weeks } = range;
   const bars = [];
-  if (weeks <= 26) {
+  const perWeek = !range.year && weeks <= 26;
+  if (perWeek) {
     for (let i = 0; i < weeks; i++) {
       const from = addDays(start, 7 * i);
       const fromISO = toISODate(from);
@@ -276,8 +342,10 @@ function frequencyCard(workouts, start) {
       });
     }
   } else {
-    const now = new Date();
-    for (let m = new Date(start.getFullYear(), start.getMonth(), 1); m <= now; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
+    // One bar per month; a calendar year always shows Jan–Dec.
+    const first = parseISODate(range.from);
+    const last = parseISODate(range.to);
+    for (let m = new Date(first.getFullYear(), first.getMonth(), 1); m <= last; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
       const prefix = toISODate(m).slice(0, 7); // "YYYY-MM"
       bars.push({
         label: m.toLocaleDateString(undefined, { month: 'short' }),
@@ -287,7 +355,7 @@ function frequencyCard(workouts, start) {
     }
   }
   return h('section', { class: 'card', style: 'margin-top:12px' },
-    barChart(weeks <= 26 ? 'Workouts per week' : 'Workouts per month', bars));
+    barChart(perWeek ? 'Workouts per week' : 'Workouts per month', bars));
 }
 
 /** The exercises done most often in the period. */
