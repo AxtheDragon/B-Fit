@@ -5,7 +5,7 @@
  * A "workout" is a session with at least one exercise matching the filter.
  */
 import { getAll, getSessions } from './db.js';
-import { h, add, setChildren, formatDate, parseISODate, toISODate, todayISO, byId } from './util.js';
+import { h, add, setChildren, formatDate, parseISODate, toISODate, todayISO, byId, CATEGORIES } from './util.js';
 import { createFilter, matchingEntries, filterControls } from './filters.js';
 import { barChart } from './chart.js';
 
@@ -20,6 +20,18 @@ const PERIODS = [
 // Remembered while the app is open.
 const filter = createFilter();
 let period = '3m';
+
+/**
+ * Activity graph colours, one per category, in the fixed order the slices of
+ * a day square are drawn in. The colours themselves are CSS variables
+ * (--cat-upper, ...) so light and dark mode can use different steps.
+ * "Other" is for strength exercises without muscle groups.
+ */
+const ACTIVITY_CATEGORIES = [
+  ...Object.entries(CATEGORIES),
+  ['cardio', 'Cardio'],
+  ['other', 'Other'],
+];
 
 /* ---------- Date helpers (weeks start on Monday) ---------- */
 
@@ -62,8 +74,21 @@ export async function render(container) {
       .map((s) => ({ session: s, entries: matchingEntries(s, filter, exercisesById, groupsById) }))
       .filter((w) => w.entries.length);
 
+    /** Categories an entry counts towards, limited to what the filter shows. */
+    const categoriesOf = (entry) => {
+      let cats;
+      if (entry.type === 'cardio') cats = ['cardio'];
+      else {
+        const groups = (exercisesById.get(entry.exerciseId)?.muscleGroupIds || []).map((id) => groupsById.get(id)).filter(Boolean);
+        // With a muscle-group filter, only that group's category counts.
+        const relevant = filter.muscleGroupId === 'all' ? groups : groups.filter((g) => String(g.id) === filter.muscleGroupId);
+        cats = relevant.length ? relevant.map((g) => g.category) : ['other'];
+      }
+      return filter.category in CATEGORIES || filter.category === 'cardio' ? cats.filter((c) => c === filter.category) : cats;
+    };
+
     setChildren(content,
-      activityCard(workouts, start),
+      activityCard(workouts, start, categoriesOf),
       summaryTiles(workouts, start),
       frequencyCard(workouts, start),
       topExercises(workouts, exercisesById));
@@ -91,12 +116,18 @@ export async function render(container) {
  * GitHub-style grid: one column per week (Mon–Sun), one square per day.
  * Days with a matching session are coloured. Tap a day to see what was done.
  */
-function activityCard(workouts, start) {
-  const byDate = new Map();
+function activityCard(workouts, start, categoriesOf) {
+  const byDate = new Map();       // date -> workouts that day
+  const catsByDate = new Map();   // date -> Set of categories trained that day
   for (const w of workouts) {
-    if (!byDate.has(w.session.date)) byDate.set(w.session.date, []);
-    byDate.get(w.session.date).push(w);
+    const date = w.session.date;
+    if (!byDate.has(date)) { byDate.set(date, []); catsByDate.set(date, new Set()); }
+    byDate.get(date).push(w);
+    for (const e of w.entries) categoriesOf(e).forEach((c) => catsByDate.get(date).add(c));
   }
+  /** The day's categories in the fixed slice order, as [key, label] pairs. */
+  const dayCategories = (iso) => ACTIVITY_CATEGORIES.filter(([key]) => catsByDate.get(iso)?.has(key));
+  const usedCategories = new Set([...catsByDate.values()].flatMap((set) => [...set]));
 
   const today = todayISO();
   const info = h('div', { class: 'activity-info muted small' }, 'Tap a day to see its sessions.');
@@ -115,6 +146,7 @@ function activityCard(workouts, start) {
     const day = byDate.get(iso) || [];
     setChildren(info,
       h('b', {}, formatDate(iso)),
+      day.length > 0 && h('div', {}, dayCategories(iso).map(([, label]) => label).join(' · ')),
       day.length
         ? day.map((w) => h('div', {}, h('a', { href: `#/session/${w.session.id}` },
           [w.session.time, w.session.location].filter(Boolean).join(' · ') || 'Session'),
@@ -164,11 +196,17 @@ function activityCard(workouts, start) {
       const iso = toISODate(addDays(week, i));
       if (iso > today) { column.append(h('span', { class: 'day future' })); continue; }
       const count = byDate.get(iso)?.length || 0;
+      const cats = dayCategories(iso);
+      // The square is split into one slice per category trained that day:
+      // 1 = whole square, 2 = halves, 3 = thirds, 4 = quarters (2 × 2).
       const cell = h('button', {
-        class: `day level-${Math.min(count, 2)}${iso === today ? ' today' : ''}`,
+        class: `day${count ? ' trained' : ''}${iso === today ? ' today' : ''}`,
         role: 'gridcell',
-        'aria-label': `${formatDate(iso)}: ${count ? `${count} session${count === 1 ? '' : 's'}` : 'no session'}`,
-      });
+        style: cats.length ? `--slices:${cats.length === 4 ? 2 : Math.min(cats.length, 3)}` : null,
+        'aria-label': `${formatDate(iso)}: ${count
+          ? `${count} session${count === 1 ? '' : 's'}, ${cats.map(([, label]) => label).join(', ')}`
+          : 'no session'}`,
+      }, cats.map(([key]) => h('span', { class: `slice cat-${key}` })));
       cell.addEventListener('click', () => selectDay(cell, iso));
       column.append(cell);
     }
@@ -194,10 +232,10 @@ function activityCard(workouts, start) {
   return h('section', { class: 'card' },
     h('h3', {}, 'Activity'),
     scroller,
+    // Legend: the four categories always, "Other" only when it occurs.
     h('div', { class: 'activity-legend muted small', 'aria-hidden': 'true' },
-      h('span', { class: 'day level-0' }), 'none',
-      h('span', { class: 'day level-1' }), '1 session',
-      h('span', { class: 'day level-2' }), '2+'),
+      ACTIVITY_CATEGORIES.filter(([key]) => key !== 'other' || usedCategories.has('other')).map(([key, label]) =>
+        h('span', { class: 'legend-item' }, h('span', { class: `swatch cat-${key}` }), label))),
     info);
 }
 
