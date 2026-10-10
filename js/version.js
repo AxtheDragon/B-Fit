@@ -8,5 +8,6 @@
  *        optional cardio fields incl. distance (m) and laps, Stats screen,
  *        exercise notes carry over to the next session
  *   1.2  activity graph: weekday labels stay visible while scrolling
+ *   1.3  record page (in development)
  */
-export const APP_VERSION = '1.2';
+export const APP_VERSION = '1.3';
