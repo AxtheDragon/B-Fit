@@ -198,11 +198,12 @@ function activityCard(workouts, start, categoriesOf) {
       const count = byDate.get(iso)?.length || 0;
       const cats = dayCategories(iso);
       // The square is split into one slice per category trained that day:
-      // 1 = whole square, 2 = halves, 3 = thirds, 4 = quarters (2 × 2).
+      // 1 = whole square, 2 / 3 = horizontal halves / thirds (stacked top to
+      // bottom), 4 = quarters (2 × 2). --slices is the number of columns.
       const cell = h('button', {
         class: `day${count ? ' trained' : ''}${iso === today ? ' today' : ''}`,
         role: 'gridcell',
-        style: cats.length ? `--slices:${cats.length === 4 ? 2 : Math.min(cats.length, 3)}` : null,
+        style: cats.length >= 4 ? '--slices:2' : null,
         'aria-label': `${formatDate(iso)}: ${count
           ? `${count} session${count === 1 ? '' : 's'}, ${cats.map(([, label]) => label).join(', ')}`
           : 'no session'}`,

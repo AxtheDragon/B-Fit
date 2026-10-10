@@ -367,8 +367,9 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 }
 button.day { cursor: pointer; }
 .day.future { background: transparent; }
-/* A trained day is split into equal slices (see --slices, set in stats.js);
-   the 1px gap between slices shows the card background. */
+/* A trained day is split into equal slices, stacked in rows; --slices (set in
+   stats.js) switches to 2 columns for quarters. The 1px gap between slices
+   shows the card background. */
 .day.trained {
   display: grid; grid-template-columns: repeat(var(--slices, 1), 1fr); grid-auto-rows: 1fr; gap: 1px;
   align-items: stretch; /* buttons centre their content by default (see button rule) */
