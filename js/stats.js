@@ -121,17 +121,25 @@ function activityCard(workouts, start) {
   };
 
   let lastMonth = -1;
-  let lastLabelAt = -99;
+  let lastLabel = null; // last label shown: { el, at: week index, room: columns it needs }
   let weeks = 0;
   for (let week = new Date(start); toISODate(week) <= today; week = addDays(week, 7), weeks++) {
     // Month label above the first week of each month. Labels need ~3 columns
-    // of room, so one that would be too close to the previous is left out.
+    // of room (4 with a year), so one that would be too close to the previous
+    // is left out.
+    // January and the very first label also show the year ("Jan 2027"), so
+    // views spanning several years stay readable; a January label always wins
+    // over a previous label that is too close, so the year is never dropped.
     const label = h('span', {});
     if (week.getMonth() !== lastMonth) {
       lastMonth = week.getMonth();
-      if (weeks - lastLabelAt >= 3) {
-        label.textContent = week.toLocaleDateString(undefined, { month: 'short' });
-        lastLabelAt = weeks;
+      const withYear = lastMonth === 0 || !lastLabel;
+      const tooClose = lastLabel && weeks - lastLabel.at < lastLabel.room;
+      if (tooClose && withYear) lastLabel.el.textContent = '';
+      if (!tooClose || withYear) {
+        label.textContent = week.toLocaleDateString(undefined,
+          withYear ? { month: 'short', year: 'numeric' } : { month: 'short' });
+        lastLabel = { el: label, at: weeks, room: withYear ? 4 : 3 };
       }
     }
     monthRow.append(label);
