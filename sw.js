@@ -7,7 +7,7 @@
  *    so the next app start picks up a new version after a deploy.
  * Bump CACHE_VERSION with every release (see js/version.js).
  */
-const CACHE_VERSION = 'bfit-v1.1';
+const CACHE_VERSION = 'bfit-v1.2';
 
 const APP_SHELL = [
   './',
