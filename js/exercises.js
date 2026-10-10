@@ -26,8 +26,9 @@ export async function renderList(container) {
   const [exercises, groups, sessions] = await Promise.all([getAll('exercises'), getAll('muscleGroups'), getSessions()]);
   const groupsById = byId(groups);
   const stats = usageStats(sessions);
-  exercises.sort((a, b) =>
-    (stats.get(b.id)?.lastDate || '').localeCompare(stats.get(a.id)?.lastDate || '') || a.name.localeCompare(b.name));
+  // Alphabetical within each section (Strength / Cardio); case-insensitive,
+  // numbers in natural order ("Row 2" before "Row 10").
+  exercises.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
 
   const list = h('div', {});
   const search = h('input', {
