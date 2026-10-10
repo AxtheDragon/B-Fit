@@ -101,7 +101,9 @@ function activityCard(workouts, start) {
   const today = todayISO();
   const info = h('div', { class: 'activity-info muted small' }, 'Tap a day to see its sessions.');
   const grid = h('div', { class: 'activity-grid', role: 'grid', 'aria-label': 'Activity by day' });
-  const monthRow = h('div', { class: 'activity-months', 'aria-hidden': 'true' });
+  // The first cell is a sticky blank corner above the weekday labels, so month
+  // names scrolling to the left slide underneath it.
+  const monthRow = h('div', { class: 'activity-months', 'aria-hidden': 'true' }, h('span', { class: 'activity-corner' }));
   let selected = null;
 
   const selectDay = (cell, iso) => {
