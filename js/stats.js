@@ -111,6 +111,7 @@ export async function render(container) {
 
     /** Categories an entry counts towards, limited to what the filter shows. */
     const categoriesOf = (entry) => {
+      if (entry.warmup) return []; // warm-ups don't colour the graph
       let cats;
       if (entry.type === 'cardio') cats = ['cardio'];
       else {
@@ -182,7 +183,7 @@ function activityCard(workouts, range, categoriesOf) {
     const day = byDate.get(iso) || [];
     setChildren(info,
       h('b', {}, formatDate(iso)),
-      day.length > 0 && h('div', {}, dayCategories(iso).map(([, label]) => label).join(' · ')),
+      day.length > 0 && h('div', {}, dayCategories(iso).map(([, label]) => label).join(' · ') || 'Warm-up only'),
       day.length
         ? day.map((w) => h('div', {}, h('a', { href: `#/session/${w.session.id}` },
           [w.session.time, w.session.location].filter(Boolean).join(' · ') || 'Session'),
@@ -245,11 +246,11 @@ function activityCard(workouts, range, categoriesOf) {
       // 1 = whole square, 2 / 3 = horizontal halves / thirds (stacked top to
       // bottom), 4 = quarters (2 × 2). --slices is the number of columns.
       const cell = h('button', {
-        class: `day${count ? ' trained' : ''}${iso === today ? ' today' : ''}`,
+        class: `day${cats.length ? ' trained' : ''}${iso === today ? ' today' : ''}`,
         role: 'gridcell',
         style: cats.length >= 4 ? '--slices:2' : null,
         'aria-label': `${formatDate(iso)}: ${count
-          ? `${count} session${count === 1 ? '' : 's'}, ${cats.map(([, label]) => label).join(', ')}`
+          ? `${count} session${count === 1 ? '' : 's'}, ${cats.map(([, label]) => label).join(', ') || 'warm-up only'}`
           : 'no session'}`,
       }, cats.map(([key]) => h('span', { class: `slice cat-${key}` })));
       cell.addEventListener('click', () => selectDay(cell, iso));

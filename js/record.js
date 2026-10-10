@@ -7,7 +7,7 @@
  *
  * Draft shape:
  *   { editingId: number|null, date: 'YYYY-MM-DD', time: 'HH:MM', location: '', note: '',
- *     entries: [ { exerciseId, type: 'strength', sets: [{ weight: '60', reps: '10' }], note, lastInfo }
+ *     entries: [ { exerciseId, type: 'strength', sets: [{ weight: '60', reps: '10' }], note, warmup, lastInfo }
  *              | { exerciseId, type: 'cardio', duration: '20', intensity: '8', distance: '', laps: '', note, lastInfo } ] }
  * (`lastInfo` and `showNote` only exist in the draft, they are not saved.)
  */
@@ -69,7 +69,8 @@ const CARDIO_FIELDS = [
  * and can hold hints for next time.
  */
 function toDraftEntry(entry) {
-  const base = { exerciseId: entry.exerciseId, type: entry.type, note: entry.note || '' };
+  // The warm-up mark carries over too: a warm-up exercise usually stays one.
+  const base = { exerciseId: entry.exerciseId, type: entry.type, note: entry.note || '', warmup: !!entry.warmup };
   if (entry.type === 'cardio') {
     for (const [key] of CARDIO_FIELDS) base[key] = numToStr(entry[key]);
     return base;
@@ -200,7 +201,7 @@ function entryCard(entry, index) {
     root.querySelector(`#entries .card[data-index="${index + dir}"]`)?.scrollIntoView({ block: 'nearest' });
   };
 
-  return h('section', { class: 'card', 'data-index': index },
+  const card = h('section', { class: `card${entry.warmup ? ' is-warmup' : ''}`, 'data-index': index },
     h('div', { class: 'card-head' },
       h('div', { class: 'spacer' },
         h('h3', {}, ex ? ex.name : 'Unknown exercise'),
@@ -214,10 +215,18 @@ function entryCard(entry, index) {
         class: 'icon-btn move-btn', 'aria-label': `Move ${name} down`, disabled: index === count - 1, onclick: () => move(1),
       }, '↓'),
       h('button', { class: 'icon-btn', 'aria-label': `Remove ${name}`, onclick: remove }, '×')),
+    // Optional warm-up mark: warm-ups are left out of the activity graph colours.
+    h('label', { class: 'warmup-toggle' },
+      h('input', {
+        type: 'checkbox', checked: !!entry.warmup,
+        onchange: (e) => { entry.warmup = e.target.checked; card.classList.toggle('is-warmup', entry.warmup); changed(); },
+      }),
+      h('span', {}, 'Warm-up')),
     entry.lastInfo && h('p', { class: 'muted small' }, entry.lastInfo),
     entry.type === 'cardio' ? cardioFields(entry) : strengthFields(entry),
     noteField(entry, index),
   );
+  return card;
 }
 
 /** Optional note per exercise: a "+ Note" button that opens a text field. */
@@ -303,6 +312,7 @@ async function save() {
       const saved = { exerciseId: entry.exerciseId, type: 'cardio' };
       for (const [key, label] of CARDIO_FIELDS) saved[key] = number(entry[key], label.toLowerCase());
       if (note) saved.note = note;
+      if (entry.warmup) saved.warmup = true;
       entries.push(saved);
     } else {
       // Ignore completely empty set rows.
@@ -311,7 +321,7 @@ async function save() {
         .filter((s) => s.weight != null || s.reps != null);
       if (!sets.length) errors.push(`${name}: add at least one set.`);
       if (sets.some((s) => s.reps == null || s.reps <= 0)) errors.push(`${name}: enter reps for every set.`);
-      entries.push({ exerciseId: entry.exerciseId, type: 'strength', sets, ...(note && { note }) });
+      entries.push({ exerciseId: entry.exerciseId, type: 'strength', sets, ...(note && { note }), ...(entry.warmup && { warmup: true }) });
     }
   }
   if (!entries.length) errors.push('Add at least one exercise.');

@@ -244,6 +244,16 @@ a.card:active { background: var(--surface-2); }
 /* Reorder buttons in an exercise card are a bit narrower than other icon buttons. */
 .icon-btn.move-btn { width: 40px; font-size: 1.2rem; }
 .icon-btn:disabled { opacity: .25; }
+/* Warm-up mark on an exercise card (Record page) */
+.warmup-toggle {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px;
+  font-size: .9rem; font-weight: 600; color: var(--muted); cursor: pointer;
+}
+.warmup-toggle input { width: 22px; height: 22px; min-height: 0; margin: 0; accent-color: var(--accent); }
+.card.is-warmup { border-style: dashed; }
+.card.is-warmup .warmup-toggle { color: var(--text); }
+.tag.warmup { background: transparent; border: 1px dashed var(--border); }
+
 .note-toggle { min-height: 40px; padding: 6px 0; margin-top: 6px; font-size: .9rem; }
 .entry-note { color: var(--muted); font-size: .88rem; font-style: italic; margin: 4px 0 0; }
 table.data td.entry-note { padding-top: 0; }

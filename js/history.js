@@ -38,7 +38,8 @@ export async function renderList(container) {
         // When filtering, only the matching exercises are listed.
         h('ul', { class: 'session-lines' }, (filtering ? entries : session.entries).map((e) => h('li', {},
           h('b', {}, exercisesById.get(e.exerciseId)?.name || 'Unknown'),
-          h('span', {}, entrySummary(e))))))));
+          h('span', {}, entrySummary(e)),
+          e.warmup && h('span', { class: 'tag warmup' }, 'Warm-up')))))));
   }
 
   add(container,
@@ -76,6 +77,7 @@ export async function renderDetail(container, id) {
         h('div', { class: 'row' },
           ex ? h('a', { href: `#/exercise/${ex.id}` }, h('h3', {}, ex.name)) : h('h3', {}, 'Unknown exercise'),
           h('span', { class: 'spacer' }),
+          e.warmup && h('span', { class: 'tag warmup' }, 'Warm-up'),
           h('span', { class: `tag ${e.type}` }, e.type === 'cardio' ? 'Cardio' : 'Strength')),
         muscles.length > 0 && h('div', { class: 'muted small' }, muscles.join(', ')),
         e.type === 'cardio'

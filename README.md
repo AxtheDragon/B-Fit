@@ -4,7 +4,7 @@ A simple fitness tracker you can install on your phone. It's a Progressive Web A
 
 - Record strength sets (kg × reps) and cardio exercises (minutes, intensity level, distance in m, laps – all optional)
 - Sessions have a date, time, optional location and note; each exercise can have its own note, which carries over to the next time as a hint
-- Exercises in a session can be reordered, and a previous session can be repeated as a template
+- Exercises in a session can be reordered and marked as warm-up, and a previous session can be repeated as a template
 - Values from the last time you did an exercise are filled in for you, and a new set copies the previous one
 - Unsaved input is autosaved, so closing the app loses nothing
 - History with category and muscle-group filters, a progress chart for each exercise
