@@ -58,3 +58,6 @@ Actions tab. The app is available at https://axthedragon.github.io/B-Fit/
 3. Push to `main`.
 
 Installed apps pick up the new version the next time they're opened (sometimes only on the second start).
+
+## AI-Disclosure
+This whole thing was made with claude-code. It is inteded exclusively for personal use. 
