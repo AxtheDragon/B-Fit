@@ -12,12 +12,13 @@
  * (`lastInfo` and `showNote` only exist in the draft, they are not saved.)
  */
 import { getAll, get, put, getSessions, getLastEntry, getDraft, saveDraft, clearDraft, findExerciseByName } from './db.js';
-import { h, setChildren, todayISO, nowTime, formatDate, toNumber, numToStr, entrySummary, byId, toast, CATEGORIES } from './util.js';
+import { h, setChildren, todayISO, nowTime, formatDate, sessionHeading, toNumber, numToStr, entrySummary, byId, toast, CATEGORIES } from './util.js';
 
 let draft = null;          // the form state
 let exercisesById = new Map();
 let muscleGroupsById = new Map();
 let pastLocations = [];   // suggestions for the location field
+let pastSessions = [];    // saved sessions, newest first (for "Repeat a previous session")
 let root = null;           // element the screen renders into
 let saveTimer = null;
 
@@ -106,12 +107,17 @@ export async function render(container) {
     getAll('exercises'), getAll('muscleGroups'), getDraft(), getSessions()]);
   exercisesById = byId(exercises);
   muscleGroupsById = byId(groups);
-  // Distinct past locations, most recently used first.
-  pastLocations = [...new Set(sessions.map((s) => s.location).filter(Boolean))];
+  setPastSessions(sessions);
   draft = { time: '', location: '', ...(stored || newDraft()) }; // drafts from v1.0 lack time/location
   // An untouched new form always starts on today's date and the current time.
   if (!hasContent(draft)) { draft.date = todayISO(); draft.time = nowTime(); }
   build();
+}
+
+function setPastSessions(sessions) {
+  pastSessions = sessions;
+  // Distinct past locations, most recently used first.
+  pastLocations = [...new Set(sessions.map((s) => s.location).filter(Boolean))];
 }
 
 /** (Re)build the whole form from `draft`. Used after structural changes. */
@@ -154,9 +160,14 @@ function build() {
     h('div', { id: 'entries' },
       draft.entries.length
         ? draft.entries.map(entryCard)
-        : h('p', { class: 'empty' }, 'No exercises yet. Tap “Add exercise” to start.')),
+        : h('p', { class: 'empty' }, pastSessions.length && !editing
+          ? 'No exercises yet. Tap “Add exercise”, or repeat a previous session.'
+          : 'No exercises yet. Tap “Add exercise” to start.')),
 
     h('button', { class: 'btn btn-dashed btn-block btn-big', style: 'margin-top:12px', onclick: openAddSheet }, '+ Add exercise'),
+    !editing && pastSessions.length > 0 && h('button', {
+      class: 'btn btn-block', style: 'margin-top:8px', onclick: openTemplateSheet,
+    }, '↻ Repeat a previous session'),
 
     h('div', { class: 'save-bar' },
       h('button', { class: 'btn btn-primary btn-block btn-big', onclick: save }, editing ? 'Save changes' : 'Save session'),
@@ -323,6 +334,7 @@ async function save() {
   clearTimeout(saveTimer);
   draft = newDraft();
   await clearDraft();
+  setPastSessions(await getSessions()); // the new session can now be used as a template
   toast(editingId != null ? 'Changes saved' : 'Session saved');
   if (editingId != null) location.hash = `#/session/${id}`;
   else { build(); window.scrollTo(0, 0); }
@@ -341,8 +353,11 @@ async function discard() {
 
 /* ---------- Add-exercise sheet ---------- */
 
-/** Add an exercise to the session, prefilled with what was done last time. */
-async function addEntry(exercise) {
+/**
+ * A new draft entry for an exercise, prefilled with what was done the last
+ * time (values and note). Empty fields if it was never done before.
+ */
+async function newEntry(exercise) {
   const last = await getLastEntry(exercise.id, draft.editingId);
   const prev = last && last.entry.type === exercise.type ? last.entry : null;
   const entry = prev ? toDraftEntry(prev) : (exercise.type === 'cardio'
@@ -350,8 +365,12 @@ async function addEntry(exercise) {
     : { exerciseId: exercise.id, type: 'strength', note: '', sets: [{ weight: '', reps: '' }] });
   entry.exerciseId = exercise.id;
   if (prev) entry.lastInfo = `Last time (${formatDate(last.session.date, { day: 'numeric', month: 'short' })}): ${entrySummary(prev)}`;
+  return entry;
+}
 
-  draft.entries.push(entry);
+/** Add an exercise to the session, prefilled with what was done last time. */
+async function addEntry(exercise) {
+  draft.entries.push(await newEntry(exercise));
   changed();
   build();
   const cards = root.querySelectorAll('#entries .card');
@@ -377,16 +396,7 @@ async function openAddSheet() {
     oninput: () => renderResults(),
   });
   const results = h('div', {});
-  const dialog = h('dialog', { class: 'sheet', 'aria-label': 'Add exercise' },
-    h('div', { class: 'sheet-inner' },
-      h('div', { class: 'sheet-head' },
-        h('h2', {}, 'Add exercise'),
-        h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => dialog.close() }, '×')),
-      h('div', { class: 'sheet-body' }, search, results)));
-
-  dialog.addEventListener('close', () => dialog.remove());
-  // Tap on the dark backdrop closes the sheet.
-  dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+  const dialog = createSheet('Add exercise', search, results);
 
   const pick = async (exercise) => { dialog.close(); await addEntry(exercise); };
 
@@ -448,6 +458,73 @@ async function openAddSheet() {
   root.append(dialog);
   dialog.showModal();
   search.focus();
+}
+
+/** A bottom sheet (<dialog>) with a title, close button and scrollable body. */
+function createSheet(title, ...body) {
+  const dialog = h('dialog', { class: 'sheet', 'aria-label': title },
+    h('div', { class: 'sheet-inner' },
+      h('div', { class: 'sheet-head' },
+        h('h2', {}, title),
+        h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => dialog.close() }, '×')),
+      h('div', { class: 'sheet-body' }, body)));
+  dialog.addEventListener('close', () => dialog.remove());
+  // Tap on the dark backdrop closes the sheet.
+  dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+  return dialog;
+}
+
+/* ---------- Repeat a previous session (template) ---------- */
+
+/**
+ * Pick a saved session and copy its exercises, in the same order, into the
+ * form. Values and notes come from the last time each exercise was done
+ * (like "Add exercise"), so the numbers follow your progress.
+ */
+function openTemplateSheet() {
+  const names = (session) => session.entries.map((e) => exercisesById.get(e.exerciseId)?.name).filter(Boolean);
+
+  const search = h('input', {
+    type: 'search', placeholder: 'Search by exercise, location or note', autocomplete: 'off',
+    'aria-label': 'Search sessions', oninput: () => renderList(),
+  });
+  const list = h('ul', { class: 'suggestions' });
+  const dialog = createSheet('Repeat a previous session',
+    h('p', { class: 'muted small', style: 'margin:0 0 8px' },
+      'Copies the exercises in the same order, filled in with what you did the last time.'),
+    search, list);
+
+  function renderList() {
+    const q = search.value.trim().toLowerCase();
+    const shown = pastSessions.filter((s) => !q ||
+      [...names(s), s.location || '', s.note || ''].some((text) => text.toLowerCase().includes(q)));
+    setChildren(list, shown.length
+      ? shown.map((s) => h('li', {},
+        h('button', { onclick: () => { dialog.close(); applyTemplate(s); } },
+          h('strong', {}, sessionHeading(s)),
+          h('span', { class: 'muted small' }, names(s).join(' · ') || 'No exercises'))))
+      : h('p', { class: 'muted' }, 'No sessions match.'));
+  }
+
+  renderList();
+  root.append(dialog);
+  dialog.showModal();
+}
+
+async function applyTemplate(session) {
+  if (draft.entries.length &&
+      !confirm('Replace the exercises you have already entered with the ones from this session?')) return;
+  const entries = [];
+  for (const e of session.entries) {
+    const exercise = exercisesById.get(e.exerciseId);
+    if (exercise) entries.push(await newEntry(exercise)); // skip exercises deleted since
+  }
+  draft.entries = entries;
+  if (!draft.location.trim() && session.location) draft.location = session.location;
+  changed();
+  build();
+  toast(`${entries.length} exercise${entries.length === 1 ? '' : 's'} added`);
+  root.querySelector('#entries')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /** "Strength · Chest, Triceps · last 12 Sep" */
