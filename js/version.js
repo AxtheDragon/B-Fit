@@ -7,6 +7,6 @@
  *   1.1  session time + location, exercise notes, reorder exercises,
  *        optional cardio fields incl. distance (m) and laps, Stats screen,
  *        exercise notes carry over to the next session
- *   1.2  activity history display (in development)
+ *   1.2  activity graph: weekday labels stay visible while scrolling
  */
 export const APP_VERSION = '1.2';
