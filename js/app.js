@@ -11,6 +11,7 @@
  *   #/settings       Backup (export / import) and muscle groups
  */
 import { openDB } from './db.js';
+import { loadColors } from './colors.js';
 import * as record from './record.js';
 import * as history from './history.js';
 import * as stats from './stats.js';
@@ -65,7 +66,7 @@ async function router() {
 window.addEventListener('hashchange', router);
 
 // Start: open the database (creates it on first run), then show the screen.
-openDB().then(router).catch((err) => {
+openDB().then(() => Promise.all([loadColors(), router()])).catch((err) => {
   main.textContent = `Could not open storage: ${err.message}`;
 });
 

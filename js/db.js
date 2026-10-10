@@ -119,6 +119,17 @@ export async function getLastEntry(exerciseId, excludeSessionId = null) {
   return null;
 }
 
+/* ---------- Small key/value settings (meta store) ---------- */
+
+export async function getMeta(key) {
+  const row = await get('meta', key);
+  return row ? row.value : undefined;
+}
+export const setMeta = (key, value) => run('meta', 'readwrite', (s) => s.put({ key, value }));
+
+/** Settings that are part of a backup (meta keys). */
+const BACKUP_SETTINGS = ['activityColors'];
+
 /* ---------- Draft (unsaved session form) ---------- */
 
 export async function getDraft() {
@@ -140,6 +151,8 @@ export async function exportAll() {
     muscleGroups: await getAll('muscleGroups'),
     exercises: await getAll('exercises'),
     sessions: await getAll('sessions'),
+    // Since v1.4; older backups simply have no settings.
+    settings: Object.fromEntries(await Promise.all(BACKUP_SETTINGS.map(async (key) => [key, await getMeta(key) ?? null]))),
   };
 }
 
@@ -154,11 +167,18 @@ export async function importAll(data) {
   const db = await openDB();
   await new Promise((resolve, reject) => {
     // One transaction: either everything is replaced, or nothing changes.
-    const tx = db.transaction(DATA_STORES, 'readwrite');
+    const tx = db.transaction([...DATA_STORES, 'meta'], 'readwrite');
     for (const storeName of DATA_STORES) {
       const store = tx.objectStore(storeName);
       store.clear();
       data[storeName].forEach((record) => store.put(record));
+    }
+    // Settings from the backup, if it has them (otherwise the current ones stay).
+    for (const key of BACKUP_SETTINGS) {
+      if (data.settings && key in data.settings) {
+        if (data.settings[key] == null) tx.objectStore('meta').delete(key);
+        else tx.objectStore('meta').put({ key, value: data.settings[key] });
+      }
     }
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);

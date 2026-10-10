@@ -23,6 +23,7 @@
   --cat-lower: #008300;
   --cat-core: #eda100;
   --cat-cardio: #e87ba4;
+  --cat-other: var(--muted);
   --radius: 14px;
   --tap: 48px;               /* minimum touch target size */
   --nav-h: 64px;
@@ -380,13 +381,20 @@ button.day { cursor: pointer; }
 .cat-lower { background: var(--cat-lower); }
 .cat-core { background: var(--cat-core); }
 .cat-cardio { background: var(--cat-cardio); }
-.cat-other { background: var(--muted); }
+.cat-other { background: var(--cat-other); }
 .day.today { outline: 1.5px solid var(--muted); outline-offset: 1px; }
 .day.selected { outline: 2px solid var(--text); outline-offset: 1px; }
 button.day:active { transform: none; }
 .activity-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 8px; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+
+/* Settings: activity colours */
+.color-row { display: flex; align-items: center; gap: 12px; min-height: 52px; border-top: 1px solid var(--border); }
+.color-row input[type=color] {
+  width: 64px; min-height: 40px; height: 40px; padding: 2px; flex: none; cursor: pointer;
+}
+.day.color-preview { width: 32px; height: 32px; border-radius: 4px; }
 .activity-info { margin-top: 10px; min-height: 40px; }
 .activity-info b { color: var(--text); }
 

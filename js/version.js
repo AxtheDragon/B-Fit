@@ -10,6 +10,7 @@
  *   1.2  activity graph: weekday labels stay visible while scrolling
  *   1.3  record page: repeat a previous session as a template
  *   1.4  activity graph: year row above the month labels, days coloured by
- *        category (split when several were trained) (in development)
+ *        category (split when several were trained), colours customizable
+ *        in Settings (in development)
  */
 export const APP_VERSION = '1.4';

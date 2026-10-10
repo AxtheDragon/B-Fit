@@ -1,13 +1,16 @@
 /*
- * Settings screen: backup (export / import JSON), muscle groups, storage info.
+ * Settings screen: backup (export / import JSON), muscle groups,
+ * activity graph colours, storage info, version.
  */
 import { getAll, remove, exportAll, importAll } from './db.js';
 import { h, add, setChildren, todayISO, toast, CATEGORIES } from './util.js';
 import { customGroupForm } from './record.js';
 import { APP_VERSION } from './version.js';
+import { ACTIVITY_CATEGORIES, getCustomColors, saveColors, currentColor, loadColors } from './colors.js';
 
 export async function render(container) {
-  const [groups, exercises, sessions] = await Promise.all([getAll('muscleGroups'), getAll('exercises'), getAll('sessions')]);
+  const [groups, exercises, sessions, customColors] = await Promise.all([
+    getAll('muscleGroups'), getAll('exercises'), getAll('sessions'), getCustomColors()]);
 
   /* ----- Export: download everything as one JSON file ----- */
   const exportData = async () => {
@@ -33,6 +36,7 @@ export async function render(container) {
       const n = Array.isArray(data.sessions) ? data.sessions.length : 0;
       if (!confirm(`Import this backup with ${n} session${n === 1 ? '' : 's'}?\n\nAll data currently in the app will be replaced.`)) return;
       await importAll(data);
+      await loadColors(); // the backup may contain custom activity colours
       toast('Backup imported');
       window.dispatchEvent(new HashChangeEvent('hashchange')); // refresh counts
     } catch (err) {
@@ -55,6 +59,24 @@ export async function render(container) {
           window.dispatchEvent(new HashChangeEvent('hashchange'));
         },
       }, '×')))));
+
+  /* ----- Activity graph colours ----- */
+  const colors = { ...customColors };
+  const colorRows = ACTIVITY_CATEGORIES.map(([key, label]) => h('label', { class: 'color-row' },
+    h('span', { class: 'spacer' }, label),
+    h('input', {
+      type: 'color', value: currentColor(key), 'aria-label': `Colour for ${label}`,
+      // Applied (and saved) live while picking
+      oninput: (e) => { colors[key] = e.target.value; saveColors(colors); },
+    })));
+  const resetColors = async () => {
+    await saveColors({});
+    toast('Default colours restored');
+    window.dispatchEvent(new HashChangeEvent('hashchange')); // refresh the pickers
+  };
+  // Preview: a day with all four categories, and one with two.
+  const previewDay = (keys) => h('span', { class: 'day trained color-preview', style: keys.length >= 4 ? '--slices:2' : null },
+    keys.map((key) => h('span', { class: `slice cat-${key}` })));
 
   /* ----- Storage info ----- */
   const storageInfo = h('p', { class: 'muted small' }, '');
@@ -84,6 +106,17 @@ export async function render(container) {
       groupList,
       h('div', { class: 'group-label' }, 'Add custom muscle group'),
       customGroupForm(() => window.dispatchEvent(new HashChangeEvent('hashchange')))),
+
+    h('section', { class: 'card', style: 'margin-top:16px' },
+      h('div', { class: 'row' },
+        h('h3', { class: 'spacer' }, 'Activity colours'),
+        previewDay(['upper', 'lower', 'core', 'cardio']),
+        previewDay(['upper', 'cardio'])),
+      h('p', { class: 'muted small', style: 'margin:4px 0 8px' },
+        'Colours of the categories in the Stats activity graph. The defaults are chosen to stay ' +
+        'distinguishable with colour blindness and adapt to dark mode; custom colours are used in both modes.'),
+      colorRows,
+      h('button', { class: 'btn btn-block', style: 'margin-top:8px', onclick: resetColors }, 'Reset to default colours')),
 
     h('section', { class: 'card', style: 'margin-top:16px' },
       h('div', { class: 'row' },

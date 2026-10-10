@@ -8,6 +8,7 @@ import { getAll, getSessions } from './db.js';
 import { h, add, setChildren, formatDate, parseISODate, toISODate, todayISO, byId, CATEGORIES } from './util.js';
 import { createFilter, matchingEntries, filterControls } from './filters.js';
 import { barChart } from './chart.js';
+import { ACTIVITY_CATEGORIES } from './colors.js'; // colours: CSS variables --cat-upper, ...
 
 const PERIODS = [
   ['4w', '4 weeks', 4],
@@ -20,18 +21,6 @@ const PERIODS = [
 // Remembered while the app is open.
 const filter = createFilter();
 let period = '3m';
-
-/**
- * Activity graph colours, one per category, in the fixed order the slices of
- * a day square are drawn in. The colours themselves are CSS variables
- * (--cat-upper, ...) so light and dark mode can use different steps.
- * "Other" is for strength exercises without muscle groups.
- */
-const ACTIVITY_CATEGORIES = [
-  ...Object.entries(CATEGORIES),
-  ['cardio', 'Cardio'],
-  ['other', 'Other'],
-];
 
 /* ---------- Date helpers (weeks start on Monday) ---------- */
 
