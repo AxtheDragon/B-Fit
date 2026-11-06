@@ -4,7 +4,8 @@
  *
  * The backup state lives in localStorage (key 'bfit-backup'), not in
  * IndexedDB, so it is not lost together with the database:
- *   { at: ms timestamp of the last backup, snoozedAt: ms timestamp of the last "Later" }
+ *   { at: ms timestamp of the last backup, snoozedAt: ms timestamp of the last "Later",
+ *     trackedSince: ms timestamp from when on backups are recorded (first start with 1.5) }
  */
 import { exportAll, getSessions } from './db.js';
 import { h, todayISO, toast, formatDate, toISODate } from './util.js';
@@ -30,6 +31,9 @@ function writeState(patch) {
   }
 }
 
+// Backups made before version 1.5 were not recorded. Remember from when on they are.
+if (!readState().trackedSince) writeState({ trackedSince: Date.now() });
+
 /** Timestamp (ms) of the last backup, or null if there never was one. */
 export const lastBackupAt = () => readState().at || null;
 
@@ -44,6 +48,16 @@ export function shouldNudge(sessions) {
   const { at = 0, snoozedAt = 0 } = readState();
   const since = Math.max(at, snoozedAt);
   return sessions.filter((s) => (s.createdAt || 0) > since).length >= NUDGE_AFTER;
+}
+
+/**
+ * True if there is no backup recorded, but sessions from before backups were
+ * recorded exist (they may well be in a backup made with an older version).
+ */
+export function backupUnknown(sessions) {
+  if (lastBackupAt()) return false;
+  const since = readState().trackedSince || Date.now();
+  return sessions.some((s) => (s.createdAt || 0) < since);
 }
 
 const markBackedUp = () => writeState({ at: Date.now() });
@@ -88,18 +102,21 @@ export async function shareBackup() {
     alert(`Sharing failed: ${err.message}\n\nThe backup is downloaded instead.`);
     return downloadBackup();
   }
+  // The share only says an app was picked, not that the file was saved there.
+  if (!confirm('Was the backup file saved (for example in Files or Drive)?')) return false;
   markBackedUp();
-  toast('Backup shared');
+  toast('Backup saved');
   return true;
 }
 
 /** Share if the browser can, download otherwise. */
 export const backupNow = () => (canShareFiles() ? shareBackup() : downloadBackup());
 
-/** Date of the last backup as text, or "never". */
-export function lastBackupText() {
+/** Date of the last backup as text, "not recorded" (see backupUnknown) or "never". */
+export function lastBackupText(sessions) {
   const at = lastBackupAt();
-  return at ? formatDate(toISODate(new Date(at))) : 'never';
+  if (at) return formatDate(toISODate(new Date(at)));
+  return backupUnknown(sessions) ? 'not recorded (B-Fit records backups since version 1.5)' : 'never';
 }
 
 /**
@@ -110,9 +127,12 @@ export async function nudgeBanner(onDone) {
   const sessions = await getSessions();
   if (!shouldNudge(sessions)) return null;
   const n = sessionsSinceBackup(sessions);
+  const headline = backupUnknown(sessions)
+    ? `No backup recorded yet for your ${n} session${n === 1 ? '' : 's'}.`
+    : `${n} session${n === 1 ? ' is' : 's are'} not in a backup yet.`;
   const banner = h('div', { class: 'backup-nudge', role: 'region', 'aria-label': 'Backup reminder' },
     h('p', {},
-      h('strong', {}, `${n} session${n === 1 ? ' is' : 's are'} not in a backup yet.`),
+      h('strong', {}, headline),
       ' Your data is stored only on this phone. A backup file keeps it safe if the browser loses it.'),
     h('div', { class: 'row' },
       h('button', { class: 'btn btn-primary', onclick: async () => { if (await backupNow()) { banner.remove(); onDone?.(); } } },

@@ -70,8 +70,14 @@ openDB().then(() => {
   const restored = getRestoreInfo();
   if (restored) {
     const when = restored.savedAt ? ` (saved ${new Date(restored.savedAt).toLocaleString()})` : '';
-    alert(`The browser lost B-Fit's database. Your data was restored from the local safety copy${when}: ` +
-      `${restored.sessions} session${restored.sessions === 1 ? '' : 's'}.\n\nPlease export a backup in Settings now.`);
+    const n = `${restored.sessions} session${restored.sessions === 1 ? '' : 's'}`;
+    if (restored.failed) {
+      alert(`The browser lost B-Fit's database, and restoring the local safety copy${when} with ${n} failed.\n\n` +
+        'The copy has been kept. Please open Settings and download it, so it is not lost.');
+    } else {
+      alert(`The browser lost B-Fit's database. Your data was restored from the local safety copy${when}: ` +
+        `${n}.\n\nPlease export a backup in Settings now.`);
+    }
   }
   return Promise.all([loadColors(), router()]);
 }).catch((err) => {

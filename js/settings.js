@@ -2,8 +2,8 @@
  * Settings screen: backup (export / import JSON), muscle groups,
  * activity graph colours, storage info, version.
  */
-import { getAll, remove, importAll, readMirror } from './db.js';
-import { downloadBackup, shareBackup, canShareFiles, lastBackupText, sessionsSinceBackup } from './backup.js';
+import { getAll, remove, importAll, readMirror, isMirrorFrozen, unfreezeMirror } from './db.js';
+import { downloadBackup, shareBackup, canShareFiles, lastBackupText, sessionsSinceBackup, backupUnknown } from './backup.js';
 import { h, add, setChildren, todayISO, toast, CATEGORIES } from './util.js';
 import { customGroupForm } from './record.js';
 import { APP_VERSION } from './version.js';
@@ -74,6 +74,31 @@ export async function render(container) {
   /* ----- Storage health ----- */
   const unsaved = sessionsSinceBackup(sessions);
   const mirror = readMirror();
+
+  // The safety copy could not be restored (see db.js): offer it as a file, so
+  // it can be imported (here, or on another device) or handed on for repair.
+  const frozen = mirror && isMirrorFrozen();
+  const downloadCopy = () => {
+    const blob = new Blob([JSON.stringify(mirror, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = h('a', { href: url, download: `b-fit-safety-copy-${todayISO()}.json` });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+  const discardCopy = () => {
+    if (!confirm('Discard the safety copy that could not be restored? Download it first if you might still need it.')) return;
+    unfreezeMirror();
+    toast('The safety copy follows the current data again');
+    setTimeout(refresh, 100);
+  };
+  const frozenInfo = frozen && h('li', { 'data-testid': 'frozen-copy' },
+    h('strong', {}, `Local safety copy: could not be restored (${mirror.sessions.length} sessions). `),
+    'It is kept unchanged until you import it or discard it. New changes are not copied meanwhile. ',
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', onclick: downloadCopy }, 'Download safety copy'),
+      h('button', { class: 'btn-ghost', onclick: discardCopy }, 'Discard')));
   const persistInfo = h('li', {}, 'Persistent storage: checking…');
   if (navigator.storage && navigator.storage.persisted) {
     navigator.storage.persisted().then((p) => {
@@ -85,9 +110,9 @@ export async function render(container) {
     persistInfo.textContent = 'Persistent storage: not supported by this browser.';
   }
   const storageInfo = h('ul', { class: 'health-list muted small', 'data-testid': 'storage-health' },
-    h('li', {}, `Last backup: ${lastBackupText()}`,
-      unsaved ? ` (${unsaved} newer session${unsaved === 1 ? '' : 's'} not in a backup)` : ''),
-    h('li', {}, mirror
+    h('li', {}, `Last backup: ${lastBackupText(sessions)}`,
+      unsaved && !backupUnknown(sessions) ? ` (${unsaved} newer session${unsaved === 1 ? '' : 's'} not in a backup)` : ''),
+    frozen ? frozenInfo : h('li', {}, mirror
       ? `Local safety copy: up to date (${mirror.sessions.length} sessions). Restores the data automatically if the browser loses the database.`
       : 'Local safety copy: not available. Export a backup to be safe.'),
     persistInfo);
