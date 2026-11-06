@@ -15,5 +15,9 @@
  *        "1 year" renamed to "12 months"; Exercises page sorted A–Z
  *   1.4.1  exercises can be marked as warm-up; warm-ups are left out of
  *          the activity graph colours
+ *   1.5  data safety: local safety copy in localStorage that refills the
+ *        database if the browser loses it, backup reminder after 3 new
+ *        sessions, "Share backup", storage health in Settings, database
+ *        connection reopened when the browser closes it
  */
-export const APP_VERSION = '1.4.1';
+export const APP_VERSION = '1.5';

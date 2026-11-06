@@ -12,9 +12,11 @@
  * (`lastInfo` and `showNote` only exist in the draft, they are not saved.)
  */
 import { getAll, get, put, getSessions, getLastEntry, getDraft, saveDraft, clearDraft, findExerciseByName } from './db.js';
+import { nudgeBanner } from './backup.js';
 import { h, setChildren, todayISO, nowTime, formatDate, sessionHeading, toNumber, numToStr, entrySummary, byId, toast, CATEGORIES } from './util.js';
 
 let draft = null;          // the form state
+let nudge = null;          // backup reminder banner (or null), see backup.js
 let exercisesById = new Map();
 let muscleGroupsById = new Map();
 let pastLocations = [];   // suggestions for the location field
@@ -112,6 +114,7 @@ export async function render(container) {
   draft = { time: '', location: '', ...(stored || newDraft()) }; // drafts from v1.0 lack time/location
   // An untouched new form always starts on today's date and the current time.
   if (!hasContent(draft)) { draft.date = todayISO(); draft.time = nowTime(); }
+  nudge = await nudgeBanner(() => { nudge = null; });
   build();
 }
 
@@ -129,6 +132,8 @@ function build() {
     editing && h('div', { class: 'edit-banner' },
       h('span', { class: 'spacer' }, 'Editing a saved session'),
       h('button', { class: 'btn-ghost', onclick: discard }, 'Cancel')),
+
+    !editing && nudge,
 
     h('h1', {}, editing ? 'Edit session' : 'New session'),
 
@@ -347,7 +352,11 @@ async function save() {
   setPastSessions(await getSessions()); // the new session can now be used as a template
   toast(editingId != null ? 'Changes saved' : 'Session saved');
   if (editingId != null) location.hash = `#/session/${id}`;
-  else { build(); window.scrollTo(0, 0); }
+  else {
+    nudge = await nudgeBanner(() => { nudge = null; }); // may be due now
+    build();
+    window.scrollTo(0, 0);
+  }
 }
 
 async function discard() {

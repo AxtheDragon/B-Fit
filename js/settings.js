@@ -2,7 +2,8 @@
  * Settings screen: backup (export / import JSON), muscle groups,
  * activity graph colours, storage info, version.
  */
-import { getAll, remove, exportAll, importAll } from './db.js';
+import { getAll, remove, importAll, readMirror } from './db.js';
+import { downloadBackup, shareBackup, canShareFiles, lastBackupText, sessionsSinceBackup } from './backup.js';
 import { h, add, setChildren, todayISO, toast, CATEGORIES } from './util.js';
 import { customGroupForm } from './record.js';
 import { APP_VERSION } from './version.js';
@@ -12,18 +13,10 @@ export async function render(container) {
   const [groups, exercises, sessions, customColors] = await Promise.all([
     getAll('muscleGroups'), getAll('exercises'), getAll('sessions'), getCustomColors()]);
 
-  /* ----- Export: download everything as one JSON file ----- */
-  const exportData = async () => {
-    const data = await exportAll();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: `b-fit-backup-${todayISO()}.json` });
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    toast('Backup downloaded');
-  };
+  /* ----- Export: download or share everything as one JSON file ----- */
+  const refresh = () => window.dispatchEvent(new HashChangeEvent('hashchange')); // re-render (counts, backup date)
+  const exportData = async () => { await downloadBackup(); refresh(); };
+  const shareData = async () => { if (await shareBackup()) refresh(); };
 
   /* ----- Import: replace everything with a backup file ----- */
   const fileInput = h('input', { type: 'file', accept: 'application/json,.json', class: 'hidden' });
@@ -78,15 +71,26 @@ export async function render(container) {
   const previewDay = (keys) => h('span', { class: 'day trained color-preview', style: keys.length >= 4 ? '--slices:2' : null },
     keys.map((key) => h('span', { class: `slice cat-${key}` })));
 
-  /* ----- Storage info ----- */
-  const storageInfo = h('p', { class: 'muted small' }, '');
+  /* ----- Storage health ----- */
+  const unsaved = sessionsSinceBackup(sessions);
+  const mirror = readMirror();
+  const persistInfo = h('li', {}, 'Persistent storage: checking…');
   if (navigator.storage && navigator.storage.persisted) {
     navigator.storage.persisted().then((p) => {
-      storageInfo.textContent = p
-        ? 'Storage is persistent: the browser will not clear your data automatically.'
-        : 'Storage is not marked persistent yet. Installing the app usually fixes this. Export a backup regularly.';
+      persistInfo.textContent = p
+        ? 'Persistent storage: yes. The browser will not clear the data to free up space.'
+        : 'Persistent storage: no. The browser may clear the data when the phone runs low on space. Installing the app usually fixes this.';
     });
+  } else {
+    persistInfo.textContent = 'Persistent storage: not supported by this browser.';
   }
+  const storageInfo = h('ul', { class: 'health-list muted small', 'data-testid': 'storage-health' },
+    h('li', {}, `Last backup: ${lastBackupText()}`,
+      unsaved ? ` (${unsaved} newer session${unsaved === 1 ? '' : 's'} not in a backup)` : ''),
+    h('li', {}, mirror
+      ? `Local safety copy: up to date (${mirror.sessions.length} sessions). Restores the data automatically if the browser loses the database.`
+      : 'Local safety copy: not available. Export a backup to be safe.'),
+    persistInfo);
 
   add(container,
     h('h1', {}, 'Settings'),
@@ -95,8 +99,10 @@ export async function render(container) {
       h('h3', {}, 'Backup'),
       h('p', { class: 'muted small' },
         `All data is stored only on this device: ${sessions.length} sessions, ${exercises.length} exercises. ` +
-        'Export a backup from time to time. Browser storage can be cleared, for example when you uninstall the app.'),
-      h('button', { class: 'btn btn-primary btn-block', onclick: exportData }, 'Export data (JSON)'),
+        'Export a backup from time to time and keep it somewhere else (Files, Drive, e-mail). ' +
+        'Browser storage can be lost, for example when site data is cleared or the app is uninstalled.'),
+      canShareFiles() && h('button', { class: 'btn btn-primary btn-block', onclick: shareData }, 'Share backup…'),
+      h('button', { class: `btn btn-block${canShareFiles() ? '' : ' btn-primary'}`, onclick: exportData }, 'Export data (JSON)'),
       h('button', { class: 'btn btn-block', onclick: () => fileInput.click() }, 'Import backup…'),
       fileInput,
       storageInfo),

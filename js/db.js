@@ -11,7 +11,9 @@
  *                 Both entry types may have `warmup: true` (since v1.4.1).
  *                                    (distance in metres)
  *   time, location and the entry notes were added in v1.1; older records simply lack them.
- *   meta          { key, value }  – currently only the autosaved draft (key 'draft')
+ *   meta          { key, value }  – the autosaved draft (key 'draft') and settings (e.g. 'activityColors')
+ *
+ * A copy of the data stores is also kept in localStorage (see "Local safety copy").
  */
 import { sortSessionsDesc } from './util.js';
 import { APP_VERSION } from './version.js';
@@ -35,16 +37,33 @@ const DEFAULT_EXERCISES = [
 
 let dbPromise = null;
 
-/** Open (and on first run create + seed) the database. */
+/** Set when the database had to be created again and was refilled from the local copy. */
+let restoredFrom = null;
+/** Info about a restore from the local safety copy at start-up, or null. */
+export const getRestoreInfo = () => restoredFrom;
+
+/**
+ * Open (and on first run create + seed) the database.
+ *
+ * The connection is reused. If the browser closes it (site data cleared,
+ * storage error, another tab upgrading), the next call opens a new one
+ * instead of failing with "The database connection is closing".
+ *
+ * If the database had to be created from scratch although a local safety
+ * copy exists (see "Local safety copy" below), it is refilled from that copy
+ * before anyone can use it.
+ */
 export function openDB() {
   if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
+  const promise = new Promise((resolve, reject) => {
+    let created = false;
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = (event) => {
       const db = request.result;
       const tx = request.transaction;
       if (event.oldVersion < 1) {
+        created = true;
         db.createObjectStore('muscleGroups', { keyPath: 'id', autoIncrement: true });
         db.createObjectStore('exercises', { keyPath: 'id', autoIncrement: true });
         const sessions = db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
@@ -59,22 +78,61 @@ export function openDB() {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = async () => {
+      const db = request.result;
+      const forget = () => { if (dbPromise === promise) dbPromise = null; };
+      db.onclose = forget; // closed by the browser
+      db.onversionchange = () => { db.close(); forget(); }; // another tab wants to upgrade
+      try {
+        const mirror = created ? readMirror() : null;
+        if (mirror) {
+          await replaceAll(db, mirror);
+          restoredFrom = { sessions: mirror.sessions.length, savedAt: mirror.mirroredAt || null };
+        }
+      } catch (err) {
+        console.error('Restoring the local copy failed', err);
+      }
+      resolve(db);
+      if (!created || !restoredFrom) writeMirror(); // keep the copy current (also creates it for existing users)
+    };
+    request.onerror = () => { if (dbPromise === promise) dbPromise = null; reject(request.error); };
+    request.onblocked = () => console.warn('Database upgrade blocked by another open tab');
   });
-  return dbPromise;
+  dbPromise = promise;
+  return promise;
 }
+
+/**
+ * Start a transaction. If the cached connection was closed in the meantime
+ * (InvalidStateError), open a new connection and try once more.
+ */
+async function transaction(storeNames, mode) {
+  const db = await openDB();
+  try {
+    return db.transaction(storeNames, mode);
+  } catch (err) {
+    if (err.name !== 'InvalidStateError') throw err;
+    if (dbPromise && (await dbPromise) === db) dbPromise = null;
+    return (await openDB()).transaction(storeNames, mode);
+  }
+}
+
+/** Writes to these stores / meta keys change data that the local copy holds. */
+const isMirrored = (storeName, record) => DATA_STORES.includes(storeName)
+  || (storeName === 'meta' && record && BACKUP_SETTINGS.includes(record.key));
 
 /**
  * Run `fn(store)` in a transaction and resolve with the result of the
  * request it returns, once the transaction has committed.
  */
-async function run(storeName, mode, fn) {
-  const db = await openDB();
+async function run(storeName, mode, fn, mirrored = mode === 'readwrite' && DATA_STORES.includes(storeName)) {
+  const tx = await transaction(storeName, mode);
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, mode);
     const request = fn(tx.objectStore(storeName));
-    tx.oncomplete = () => resolve(request ? request.result : undefined);
+    tx.oncomplete = () => {
+      if (mirrored) writeMirror();
+      resolve(request ? request.result : undefined);
+    };
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
@@ -126,7 +184,7 @@ export async function getMeta(key) {
   const row = await get('meta', key);
   return row ? row.value : undefined;
 }
-export const setMeta = (key, value) => run('meta', 'readwrite', (s) => s.put({ key, value }));
+export const setMeta = (key, value) => run('meta', 'readwrite', (s) => s.put({ key, value }), isMirrored('meta', { key }));
 
 /** Settings that are part of a backup (meta keys). */
 const BACKUP_SETTINGS = ['activityColors'];
@@ -162,11 +220,16 @@ export async function exportAll() {
  * Throws a readable error if the file doesn't look like a B-Fit backup.
  */
 export async function importAll(data) {
-  if (!data || data.app !== 'B-Fit' || !DATA_STORES.every((s) => Array.isArray(data[s]))) {
-    throw new Error('This file is not a B-Fit backup.');
-  }
-  const db = await openDB();
-  await new Promise((resolve, reject) => {
+  if (!isBackup(data)) throw new Error('This file is not a B-Fit backup.');
+  await replaceAll(await openDB(), data);
+  writeMirror();
+}
+
+const isBackup = (data) => !!data && data.app === 'B-Fit' && DATA_STORES.every((s) => Array.isArray(data[s]));
+
+/** Replace all data stores (and backed-up settings) in one transaction. */
+function replaceAll(db, data) {
+  return new Promise((resolve, reject) => {
     // One transaction: either everything is replaced, or nothing changes.
     const tx = db.transaction([...DATA_STORES, 'meta'], 'readwrite');
     for (const storeName of DATA_STORES) {
@@ -185,4 +248,41 @@ export async function importAll(data) {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error('Import failed'));
   });
+}
+
+/* ---------- Local safety copy ---------- */
+/*
+ * After every change, the same data a backup contains is also written to
+ * localStorage. Chrome keeps localStorage in separate files from IndexedDB,
+ * so if the browser throws the IndexedDB database away (for example because
+ * it considers it damaged), the copy usually survives, and openDB() refills
+ * the new, empty database from it. It does NOT survive clearing the site's
+ * data – that is what exported backups are for.
+ */
+const MIRROR_KEY = 'bfit-mirror';
+let mirrorQueued = false;
+
+/** Write the local copy soon (several changes in a row are written once). */
+function writeMirror() {
+  if (mirrorQueued) return;
+  mirrorQueued = true;
+  setTimeout(async () => {
+    mirrorQueued = false;
+    try {
+      const data = await exportAll();
+      localStorage.setItem(MIRROR_KEY, JSON.stringify({ ...data, mirroredAt: data.exportedAt }));
+    } catch (err) {
+      console.warn('Could not update the local copy', err);
+    }
+  }, 0);
+}
+
+/** The local copy, or null if there is none (or it is unreadable). */
+export function readMirror() {
+  try {
+    const data = JSON.parse(localStorage.getItem(MIRROR_KEY));
+    return isBackup(data) ? data : null;
+  } catch {
+    return null;
+  }
 }
