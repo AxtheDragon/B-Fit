@@ -2,8 +2,8 @@
  * Settings screen: backup (export / import JSON), muscle groups,
  * activity graph colours, storage info, version.
  */
-import { getAll, remove, importAll, readMirror, isMirrorFrozen, unfreezeMirror } from './db.js';
-import { downloadBackup, shareBackup, canShareFiles, lastBackupText, sessionsSinceBackup, backupUnknown } from './backup.js';
+import { getAll, remove, importAll, validateBackup, getUndoInfo, undoImport, readMirror, isMirrorFrozen, unfreezeMirror } from './db.js';
+import { downloadBackup, shareBackup, canShareFiles, prepareShare, lastBackupText, sessionsSinceBackup, backupUnknown } from './backup.js';
 import { h, add, setChildren, todayISO, toast, CATEGORIES } from './util.js';
 import { customGroupForm } from './record.js';
 import { APP_VERSION } from './version.js';
@@ -17,25 +17,61 @@ export async function render(container) {
   const refresh = () => window.dispatchEvent(new HashChangeEvent('hashchange')); // re-render (counts, backup date)
   const exportData = async () => { await downloadBackup(); refresh(); };
   const shareData = async () => { if (await shareBackup()) refresh(); };
+  if (canShareFiles()) prepareShare().catch((err) => console.warn('Could not prepare the backup', err));
 
   /* ----- Import: replace everything with a backup file ----- */
-  const fileInput = h('input', { type: 'file', accept: 'application/json,.json', class: 'hidden' });
+  // .txt too: shared backups are .txt files (see backup.js). The content is
+  // checked record by record before anything is replaced.
+  const fileInput = h('input', { type: 'file', accept: 'application/json,.json,text/plain,.txt', class: 'hidden' });
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files[0];
     fileInput.value = '';
     if (!file) return;
+    let data;
     try {
-      const data = JSON.parse(await file.text());
-      const n = Array.isArray(data.sessions) ? data.sessions.length : 0;
-      if (!confirm(`Import this backup with ${n} session${n === 1 ? '' : 's'}?\n\nAll data currently in the app will be replaced.`)) return;
-      await importAll(data);
+      data = JSON.parse(await file.text());
+    } catch {
+      alert('Import failed: the file is not a B-Fit backup (it does not contain valid JSON).\n\nNothing was changed.');
+      return;
+    }
+    const problems = validateBackup(data);
+    if (problems.length) {
+      alert(`Import failed: this file is not a valid B-Fit backup.\n• ${problems.join('\n• ')}\n\nNothing was changed.`);
+      return;
+    }
+    const exported = Date.parse(data.exportedAt);
+    const from = Number.isNaN(exported) ? 'Backup (date unknown)' : `Backup from ${new Date(exported).toLocaleString()}`;
+    if (!confirm(`${from} with ${plural(data.sessions.length, 'session')}.\n` +
+      `You currently have ${plural(sessions.length, 'session')}.\n\n` +
+      'Import it? All data currently in the app will be replaced. You can undo this in Settings until you record or change a session.')) return;
+    try {
+      const { undoSaved } = await importAll(data);
       await loadColors(); // the backup may contain custom activity colours
-      toast('Backup imported');
-      window.dispatchEvent(new HashChangeEvent('hashchange')); // refresh counts
+      if (!undoSaved) alert('Backup imported. Undo is not available: there was not enough storage to keep the previous data.');
+      else toast('Backup imported');
+      refresh();
     } catch (err) {
-      alert(`Import failed: ${err instanceof SyntaxError ? 'the file is not valid JSON.' : err.message}`);
+      alert(`Import failed: ${err.message}`);
     }
   });
+
+  /* ----- Undo last import ----- */
+  const undo = getUndoInfo();
+  const undoLast = async () => {
+    if (!confirm(`Undo the last import? The data from before it (${plural(undo.sessions, 'session')}) comes back, ` +
+      'and the imported data is replaced.')) return;
+    try {
+      await undoImport();
+      await loadColors();
+      toast('Import undone');
+      refresh();
+    } catch (err) {
+      alert(`Undo failed: ${err.message}`);
+    }
+  };
+  const undoButton = undo && h('button', { class: 'btn btn-block', 'data-testid': 'undo-import', onclick: undoLast },
+    `Undo last import (back to ${plural(undo.sessions, 'session')})`);
 
   /* ----- Muscle groups ----- */
   const usedGroupIds = new Set(exercises.flatMap((e) => e.muscleGroupIds));
@@ -129,6 +165,7 @@ export async function render(container) {
       canShareFiles() && h('button', { class: 'btn btn-primary btn-block', onclick: shareData }, 'Share backup…'),
       h('button', { class: `btn btn-block${canShareFiles() ? '' : ' btn-primary'}`, onclick: exportData }, 'Export data (JSON)'),
       h('button', { class: 'btn btn-block', onclick: () => fileInput.click() }, 'Import backup…'),
+      undoButton,
       fileInput,
       storageInfo),
 

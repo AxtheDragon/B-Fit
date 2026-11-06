@@ -137,13 +137,18 @@ async function run(storeName, mode, fn, mirrored = mode === 'readwrite' && DATA_
   return new Promise((resolve, reject) => {
     const request = fn(tx.objectStore(storeName));
     tx.oncomplete = () => {
-      if (mirrored) writeMirror();
+      if (mirrored) { dataVersion++; writeMirror(); }
+      if (mode === 'readwrite' && storeName === 'sessions') discardUndo(); // undo would lose this change
       resolve(request ? request.result : undefined);
     };
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
 }
+
+/** Counts changes to backed-up data, so a prepared backup file can tell if it is outdated. */
+let dataVersion = 0;
+export const getDataVersion = () => dataVersion;
 
 /* ---------- Generic CRUD ---------- */
 
@@ -240,12 +245,131 @@ export async function exportAll() {
 
 /**
  * Replace all data with the contents of a backup file.
- * Throws a readable error if the file doesn't look like a B-Fit backup.
+ * Throws a readable error if the file isn't a valid B-Fit backup; nothing is
+ * changed then. The data from before is kept for "Undo last import"; resolves
+ * with { undoSaved } (false if there was no room for it in localStorage).
  */
 export async function importAll(data) {
-  if (!isBackup(data)) throw new Error('This file is not a B-Fit backup.');
+  const problems = validateBackup(data);
+  if (problems.length) {
+    throw new Error(`This file is not a valid B-Fit backup:\n• ${problems.join('\n• ')}\n\nNothing was changed.`);
+  }
+  const undoSaved = saveUndo(await exportAll());
   await replaceAll(await openDB(), data);
+  dataVersion++;
   if (isMirrorFrozen()) unfreezeMirror(); // the data is back (or deliberately replaced)
+  else writeMirror();
+  return { undoSaved };
+}
+
+/* ---------- Backup validation ---------- */
+
+const isId = (v) => Number.isInteger(v) && v > 0;
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const isOptNum = (v) => v == null || isNum(v);
+const isOptStr = (v) => v == null || typeof v === 'string';
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Check a backup record by record, before anything is written. Returns a
+ * list of problems (at most a few, in plain words); empty means it is valid.
+ * Accepts every format B-Fit has written since version 1.0.
+ */
+export function validateBackup(data) {
+  if (!isBackup(data)) return ['It does not contain B-Fit data (sessions, exercises and muscle groups).'];
+  const problems = [];
+  const report = (msg) => { if (problems.length < 5) problems.push(msg); };
+
+  const checkIds = (list, label) => {
+    const seen = new Set();
+    list.forEach((r, i) => {
+      if (!isObj(r) || !isId(r.id)) report(`${label} no. ${i + 1} has no valid id.`);
+      else if (seen.has(r.id)) report(`${label} id ${r.id} appears twice.`);
+      else seen.add(r.id);
+    });
+    return seen;
+  };
+  const groupIds = checkIds(data.muscleGroups, 'Muscle group');
+  const exerciseIds = checkIds(data.exercises, 'Exercise');
+  checkIds(data.sessions, 'Session');
+
+  for (const g of data.muscleGroups.filter(isObj)) {
+    if (typeof g.name !== 'string' || !g.name.trim()) report(`Muscle group ${g.id} has no name.`);
+    if (!['upper', 'lower', 'core'].includes(g.category)) report(`Muscle group “${g.name}” has an unknown category.`);
+  }
+  for (const e of data.exercises.filter(isObj)) {
+    if (typeof e.name !== 'string' || !e.name.trim()) report(`Exercise ${e.id} has no name.`);
+    if (!['strength', 'cardio'].includes(e.type)) report(`Exercise “${e.name}” has an unknown type.`);
+    if (!Array.isArray(e.muscleGroupIds) || !e.muscleGroupIds.every((id) => groupIds.has(id))) {
+      report(`Exercise “${e.name}” refers to a muscle group that is missing.`);
+    }
+  }
+  for (const s of data.sessions.filter(isObj)) {
+    const label = `Session ${typeof s.date === 'string' ? s.date : s.id}`;
+    if (typeof s.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s.date)) report(`${label} has no valid date.`);
+    if (!isOptStr(s.time) || !isOptStr(s.location) || !isOptStr(s.note)) report(`${label} has an invalid time, location or note.`);
+    if (!Array.isArray(s.entries)) { report(`${label} has no exercise list.`); continue; }
+    for (const entry of s.entries) {
+      if (!isObj(entry) || !exerciseIds.has(entry.exerciseId)) { report(`${label} contains an exercise that is missing.`); continue; }
+      if (!isOptStr(entry.note)) report(`${label} has an invalid exercise note.`);
+      if (entry.type === 'strength') {
+        if (!Array.isArray(entry.sets) || !entry.sets.every((set) => isObj(set) && isOptNum(set.weight) && isOptNum(set.reps))) {
+          report(`${label} has invalid sets.`);
+        }
+      } else if (entry.type === 'cardio') {
+        if (!['duration', 'intensity', 'distance', 'laps'].every((k) => isOptNum(entry[k]))) report(`${label} has invalid cardio values.`);
+      } else {
+        report(`${label} contains an exercise of unknown type.`);
+      }
+    }
+  }
+  if (data.settings != null && !isObj(data.settings)) report('The settings part is invalid.');
+  return problems;
+}
+
+/* ---------- Undo last import ---------- */
+/*
+ * Before an import replaces everything, the data from before is kept in
+ * localStorage. It can be put back until a session is recorded, changed or
+ * deleted (after that, undoing would lose that change).
+ */
+const UNDO_KEY = 'bfit-undo-import';
+
+function saveUndo(data) {
+  try {
+    localStorage.setItem(UNDO_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data }));
+    return true;
+  } catch (err) {
+    console.warn('No room to keep the data for undo', err);
+    discardUndo();
+    return false;
+  }
+}
+
+function discardUndo() {
+  try { localStorage.removeItem(UNDO_KEY); } catch { /* storage unavailable */ }
+}
+
+/** { savedAt, sessions } of the data an undo would bring back, or null. */
+export function getUndoInfo() {
+  try {
+    const undo = JSON.parse(localStorage.getItem(UNDO_KEY));
+    return undo && isBackup(undo.data) ? { savedAt: undo.savedAt, sessions: undo.data.sessions.length } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Put back the data from before the last import. */
+export async function undoImport() {
+  const undo = JSON.parse(localStorage.getItem(UNDO_KEY));
+  if (!undo || !isBackup(undo.data)) throw new Error('There is nothing to undo.');
+  // The saved data may lack settings keys that the import added: put them back as "not set".
+  const data = { ...undo.data, settings: { ...Object.fromEntries(BACKUP_SETTINGS.map((k) => [k, null])), ...undo.data.settings } };
+  await replaceAll(await openDB(), data);
+  dataVersion++;
+  discardUndo();
+  if (isMirrorFrozen()) unfreezeMirror();
   else writeMirror();
 }
 
