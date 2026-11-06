@@ -10,7 +10,7 @@
  *   #/exercise/3     Progress for one exercise
  *   #/settings       Backup (export / import) and muscle groups
  */
-import { openDB } from './db.js';
+import { openDB, getRestoreInfo } from './db.js';
 import { loadColors } from './colors.js';
 import * as record from './record.js';
 import * as history from './history.js';
@@ -66,7 +66,21 @@ async function router() {
 window.addEventListener('hashchange', router);
 
 // Start: open the database (creates it on first run), then show the screen.
-openDB().then(() => Promise.all([loadColors(), router()])).catch((err) => {
+openDB().then(() => {
+  const restored = getRestoreInfo();
+  if (restored) {
+    const when = restored.savedAt ? ` (saved ${new Date(restored.savedAt).toLocaleString()})` : '';
+    const n = `${restored.sessions} session${restored.sessions === 1 ? '' : 's'}`;
+    if (restored.failed) {
+      alert(`The browser lost B-Fit's database, and restoring the local safety copy${when} with ${n} failed.\n\n` +
+        'The copy has been kept. Please open Settings and download it, so it is not lost.');
+    } else {
+      alert(`The browser lost B-Fit's database. Your data was restored from the local safety copy${when}: ` +
+        `${n}.\n\nPlease export a backup in Settings now.`);
+    }
+  }
+  return Promise.all([loadColors(), router()]);
+}).catch((err) => {
   main.textContent = `Could not open storage: ${err.message}`;
 });
 

@@ -216,6 +216,14 @@ a.card:active { background: var(--surface-2); }
 .record-top { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 16px; }
 .date-input { font-size: 1.1rem; font-weight: 600; }
 
+.backup-nudge {
+  background: var(--accent-soft); color: var(--text);
+  border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px;
+}
+.backup-nudge p { margin: 0 0 10px; }
+.health-list { margin: 0; padding-left: 18px; }
+.health-list li + li { margin-top: 4px; }
+
 .edit-banner {
   display: flex; align-items: center; gap: 8px;
   background: var(--accent-soft); color: var(--text);

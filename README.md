@@ -11,9 +11,9 @@ This is a personal project. It is provided as is, without warranty of any kind, 
 - Unsaved input is autosaved, so closing the app loses nothing
 - History with category and muscle-group filters, a progress chart for each exercise
 - Stats: activity graph of training days (coloured by category, colours customizable in Settings), workouts per week/month, totals and most frequent exercises – for the last 4 weeks to 12 months, a calendar year (Jan–Dec, to compare years) or everything
-- Everything is stored on the device in IndexedDB, with no account and no server
+- Everything is stored on the device in IndexedDB, with no account and no server. A safety copy in localStorage refills the database automatically if the browser loses it
 - Works offline and can be installed with "Add to Home screen"
-- Export and import a JSON backup under **Settings** (includes custom colours)
+- Export, share and import a JSON backup under **Settings** (includes custom colours); a reminder appears once 3 sessions are not in a backup, and Settings shows the last backup date and storage status
 
 ## Files
 
@@ -23,7 +23,7 @@ manifest.json     PWA manifest
 sw.js             service worker (offline cache)
 css/style.css     styles (mobile-first, dark mode)
 js/app.js         router + service worker registration
-js/db.js          IndexedDB storage, seed data, export/import
+js/db.js          IndexedDB storage, seed data, export/import, local safety copy
 js/record.js      Record screen (start screen) + add-exercise sheet
 js/history.js     History list, filters, session detail
 js/stats.js       Stats screen (activity graph + statistics)
@@ -32,6 +32,7 @@ js/exercises.js   Exercise list + progress page
 js/chart.js       small SVG line and bar charts
 js/colors.js      activity graph colours (defaults + custom from Settings)
 js/version.js     app version (shown in Settings)
+js/backup.js      backup download / share, last-backup date, backup reminder
 js/settings.js    Backup + muscle groups
 js/util.js        helpers
 icons/            app icons
