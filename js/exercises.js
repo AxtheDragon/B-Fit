@@ -3,7 +3,7 @@
  * (chart + every past entry). Exercises can be renamed, have their muscle
  * groups changed, or be deleted if they were never used.
  */
-import { getAll, get, put, remove, getSessions, findExerciseByName } from './db.js';
+import { getAll, get, put, remove, getSessions, findExerciseByName, getDraft } from './db.js';
 import { h, add, setChildren, formatDate, formatSet, entrySummary, byId, toast } from './util.js';
 import { lineChart } from './chart.js';
 import { muscleGroupChips } from './record.js';
@@ -183,6 +183,13 @@ function editSection(exercise, groups, useCount) {
   };
 
   const del = async () => {
+    // Saved sessions can't use it (see useCount), but the unsaved one on the
+    // Record screen might: deleting it would leave that session pointing nowhere.
+    const draft = await getDraft();
+    if (draft && draft.entries.some((e) => e.exerciseId === exercise.id)) {
+      alert(`“${exercise.name}” is in the session on the Record screen. Remove it there (or save or discard that session) first.`);
+      return;
+    }
     if (!confirm(`Delete “${exercise.name}”?`)) return;
     await remove('exercises', exercise.id);
     toast('Exercise deleted');

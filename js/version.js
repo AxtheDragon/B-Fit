@@ -21,6 +21,8 @@
  *        connection reopened when the browser closes it
  *   1.5.1  "Share backup" shares a .txt file (Chrome refused .json) prepared
  *          before the tap; Import accepts .txt, checks every record first,
- *          shows the backup date, and can be undone in Settings
+ *          shows the backup date, and can be undone in Settings until
+ *          anything changes; an import discards the unsaved session, and an
+ *          exercise in the unsaved session can't be deleted
  */
 export const APP_VERSION = '1.5.1';

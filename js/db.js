@@ -88,7 +88,7 @@ export function openDB() {
       const mirror = created ? readMirror() : null;
       if (mirror) {
         try {
-          await replaceAll(db, mirror, readDraftCopy());
+          await replaceAll(db, mirror, { draft: readDraftCopy() || undefined });
           restoredFrom = { sessions: mirror.sessions.length, savedAt: mirror.mirroredAt || null };
           if (isMirrorFrozen()) unfreezeMirror(); // an earlier failed copy is restored now
         } catch (err) {
@@ -133,12 +133,14 @@ const isMirrored = (storeName, record) => DATA_STORES.includes(storeName)
  * request it returns, once the transaction has committed.
  */
 async function run(storeName, mode, fn, mirrored = mode === 'readwrite' && DATA_STORES.includes(storeName)) {
-  const tx = await transaction(storeName, mode);
+  // A change to backed-up data also drops "Undo last import" in the same
+  // transaction: undoing would silently lose that change.
+  const tx = await transaction(mirrored && storeName !== 'meta' ? [storeName, 'meta'] : storeName, mode);
   return new Promise((resolve, reject) => {
     const request = fn(tx.objectStore(storeName));
+    if (mirrored) tx.objectStore('meta').delete(UNDO_KEY);
     tx.oncomplete = () => {
       if (mirrored) { dataVersion++; writeMirror(); }
-      if (mode === 'readwrite' && storeName === 'sessions') discardUndo(); // undo would lose this change
       resolve(request ? request.result : undefined);
     };
     tx.onerror = () => reject(tx.error);
@@ -246,20 +248,21 @@ export async function exportAll() {
 /**
  * Replace all data with the contents of a backup file.
  * Throws a readable error if the file isn't a valid B-Fit backup; nothing is
- * changed then. The data from before is kept for "Undo last import"; resolves
- * with { undoSaved } (false if there was no room for it in localStorage).
+ * changed then. In the same transaction, the data from before is kept for
+ * "Undo last import", and the unsaved session form is discarded (its ids
+ * would point to other records in the imported data).
  */
 export async function importAll(data) {
-  const problems = validateBackup(data);
-  if (problems.length) {
-    throw new Error(`This file is not a valid B-Fit backup:\n• ${problems.join('\n• ')}\n\nNothing was changed.`);
+  const { errors } = validateBackup(data);
+  if (errors.length) {
+    throw new Error(`This file is not a valid B-Fit backup:\n• ${errors.join('\n• ')}\n\nNothing was changed.`);
   }
-  const undoSaved = saveUndo(await exportAll());
-  await replaceAll(await openDB(), data);
+  const before = await exportAll();
+  await replaceAll(await openDB(), data, { draft: null, undo: { savedAt: new Date().toISOString(), data: before } });
+  writeDraftCopy(null);
   dataVersion++;
   if (isMirrorFrozen()) unfreezeMirror(); // the data is back (or deliberately replaced)
   else writeMirror();
-  return { undoSaved };
 }
 
 /* ---------- Backup validation ---------- */
@@ -276,9 +279,14 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
  * Accepts every format B-Fit has written since version 1.0.
  */
 export function validateBackup(data) {
-  if (!isBackup(data)) return ['It does not contain B-Fit data (sessions, exercises and muscle groups).'];
+  if (!isBackup(data)) return { errors: ['It does not contain B-Fit data (sessions, exercises and muscle groups).'], warnings: [] };
   const problems = [];
   const report = (msg) => { if (problems.length < 5) problems.push(msg); };
+  // References to deleted exercises / muscle groups: B-Fit could create them
+  // itself (e.g. an exercise deleted while it was in the unsaved session), and
+  // every screen copes with them, so they are imported as they are.
+  let missingExercises = 0;
+  let missingGroups = 0;
 
   const checkIds = (list, label) => {
     const seen = new Set();
@@ -300,9 +308,8 @@ export function validateBackup(data) {
   for (const e of data.exercises.filter(isObj)) {
     if (typeof e.name !== 'string' || !e.name.trim()) report(`Exercise ${e.id} has no name.`);
     if (!['strength', 'cardio'].includes(e.type)) report(`Exercise “${e.name}” has an unknown type.`);
-    if (!Array.isArray(e.muscleGroupIds) || !e.muscleGroupIds.every((id) => groupIds.has(id))) {
-      report(`Exercise “${e.name}” refers to a muscle group that is missing.`);
-    }
+    if (!Array.isArray(e.muscleGroupIds)) report(`Exercise “${e.name}” has an invalid muscle group list.`);
+    else if (!e.muscleGroupIds.every((id) => groupIds.has(id))) missingGroups++;
   }
   for (const s of data.sessions.filter(isObj)) {
     const label = `Session ${typeof s.date === 'string' ? s.date : s.id}`;
@@ -310,7 +317,8 @@ export function validateBackup(data) {
     if (!isOptStr(s.time) || !isOptStr(s.location) || !isOptStr(s.note)) report(`${label} has an invalid time, location or note.`);
     if (!Array.isArray(s.entries)) { report(`${label} has no exercise list.`); continue; }
     for (const entry of s.entries) {
-      if (!isObj(entry) || !exerciseIds.has(entry.exerciseId)) { report(`${label} contains an exercise that is missing.`); continue; }
+      if (!isObj(entry) || !isId(entry.exerciseId)) { report(`${label} contains an invalid exercise.`); continue; }
+      if (!exerciseIds.has(entry.exerciseId)) missingExercises++;
       if (!isOptStr(entry.note)) report(`${label} has an invalid exercise note.`);
       if (entry.type === 'strength') {
         if (!Array.isArray(entry.sets) || !entry.sets.every((set) => isObj(set) && isOptNum(set.weight) && isOptNum(set.reps))) {
@@ -324,51 +332,37 @@ export function validateBackup(data) {
     }
   }
   if (data.settings != null && !isObj(data.settings)) report('The settings part is invalid.');
-  return problems;
+  const warnings = [];
+  if (missingExercises) warnings.push(`${missingExercises} exercise entr${missingExercises === 1 ? 'y refers' : 'ies refer'} to an exercise that no longer exists.`);
+  if (missingGroups) warnings.push(`${missingGroups} exercise${missingGroups === 1 ? ' refers' : 's refer'} to a muscle group that no longer exists.`);
+  return { errors: problems, warnings };
 }
 
 /* ---------- Undo last import ---------- */
 /*
- * Before an import replaces everything, the data from before is kept in
- * localStorage. It can be put back until a session is recorded, changed or
- * deleted (after that, undoing would lose that change).
+ * An import keeps the data from before in the meta store (key below), written
+ * in the same transaction as the import. It is dropped as soon as any
+ * backed-up data changes (see run), because undoing would lose that change.
+ * It lives in IndexedDB, not localStorage, so it doesn't take room from the
+ * local safety copy; it is not part of backups or of the safety copy.
  */
-const UNDO_KEY = 'bfit-undo-import';
-
-function saveUndo(data) {
-  try {
-    localStorage.setItem(UNDO_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data }));
-    return true;
-  } catch (err) {
-    console.warn('No room to keep the data for undo', err);
-    discardUndo();
-    return false;
-  }
-}
-
-function discardUndo() {
-  try { localStorage.removeItem(UNDO_KEY); } catch { /* storage unavailable */ }
-}
+const UNDO_KEY = 'undoImport';
 
 /** { savedAt, sessions } of the data an undo would bring back, or null. */
-export function getUndoInfo() {
-  try {
-    const undo = JSON.parse(localStorage.getItem(UNDO_KEY));
-    return undo && isBackup(undo.data) ? { savedAt: undo.savedAt, sessions: undo.data.sessions.length } : null;
-  } catch {
-    return null;
-  }
+export async function getUndoInfo() {
+  const undo = await getMeta(UNDO_KEY);
+  return undo && isBackup(undo.data) ? { savedAt: undo.savedAt, sessions: undo.data.sessions.length } : null;
 }
 
-/** Put back the data from before the last import. */
+/** Put back the data from before the last import (and discard the unsaved session form). */
 export async function undoImport() {
-  const undo = JSON.parse(localStorage.getItem(UNDO_KEY));
+  const undo = await getMeta(UNDO_KEY);
   if (!undo || !isBackup(undo.data)) throw new Error('There is nothing to undo.');
   // The saved data may lack settings keys that the import added: put them back as "not set".
   const data = { ...undo.data, settings: { ...Object.fromEntries(BACKUP_SETTINGS.map((k) => [k, null])), ...undo.data.settings } };
-  await replaceAll(await openDB(), data);
+  await replaceAll(await openDB(), data, { draft: null, undo: null });
+  writeDraftCopy(null);
   dataVersion++;
-  discardUndo();
   if (isMirrorFrozen()) unfreezeMirror();
   else writeMirror();
 }
@@ -377,9 +371,10 @@ const isBackup = (data) => !!data && data.app === 'B-Fit' && DATA_STORES.every((
 
 /**
  * Replace all data stores (and backed-up settings) in one transaction.
- * `draft` (optional) is also stored, as the autosaved session form.
+ * `draft` and `undo` set the autosaved session form and the "Undo last
+ * import" data in the same transaction: undefined leaves them, null deletes them.
  */
-function replaceAll(db, data, draft = null) {
+function replaceAll(db, data, { draft, undo } = {}) {
   return new Promise((resolve, reject) => {
     // One transaction: either everything is replaced, or nothing changes.
     const tx = db.transaction([...DATA_STORES, 'meta'], 'readwrite');
@@ -399,7 +394,9 @@ function replaceAll(db, data, draft = null) {
           else tx.objectStore('meta').put({ key, value: data.settings[key] });
         }
       }
-      if (draft) tx.objectStore('meta').put({ key: 'draft', value: draft });
+      const meta = tx.objectStore('meta');
+      if (draft !== undefined) draft ? meta.put({ key: 'draft', value: draft }) : meta.delete('draft');
+      if (undo !== undefined) undo ? meta.put({ key: UNDO_KEY, value: undo }) : meta.delete(UNDO_KEY);
     } catch (err) {
       // A record IndexedDB refuses (e.g. an invalid id) throws here. Without the
       // abort, the records written so far would still be committed.

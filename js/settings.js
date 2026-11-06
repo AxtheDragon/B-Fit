@@ -2,7 +2,7 @@
  * Settings screen: backup (export / import JSON), muscle groups,
  * activity graph colours, storage info, version.
  */
-import { getAll, remove, importAll, validateBackup, getUndoInfo, undoImport, readMirror, isMirrorFrozen, unfreezeMirror } from './db.js';
+import { getAll, remove, importAll, validateBackup, getUndoInfo, undoImport, getDraft, readMirror, isMirrorFrozen, unfreezeMirror } from './db.js';
 import { downloadBackup, shareBackup, canShareFiles, prepareShare, lastBackupText, sessionsSinceBackup, backupUnknown } from './backup.js';
 import { h, add, setChildren, todayISO, toast, CATEGORIES } from './util.js';
 import { customGroupForm } from './record.js';
@@ -18,6 +18,15 @@ export async function render(container) {
   const exportData = async () => { await downloadBackup(); refresh(); };
   const shareData = async () => { if (await shareBackup()) refresh(); };
   if (canShareFiles()) prepareShare().catch((err) => console.warn('Could not prepare the backup', err));
+
+  /** Import and undo discard the unsaved session on the Record screen: say so. */
+  const unsavedNote = async () => {
+    const draft = await getDraft();
+    if (!draft) return '';
+    if (draft.editingId != null) return '\nThe session you are editing on the Record screen will be closed without saving your changes.\n';
+    return draft.entries?.length || (draft.note || '').trim()
+      ? '\nThe unsaved session on the Record screen will be discarded.\n' : '';
+  };
 
   /* ----- Import: replace everything with a backup file ----- */
   // .txt too: shared backups are .txt files (see backup.js). The content is
@@ -35,21 +44,22 @@ export async function render(container) {
       alert('Import failed: the file is not a B-Fit backup (it does not contain valid JSON).\n\nNothing was changed.');
       return;
     }
-    const problems = validateBackup(data);
-    if (problems.length) {
-      alert(`Import failed: this file is not a valid B-Fit backup.\n• ${problems.join('\n• ')}\n\nNothing was changed.`);
+    const { errors, warnings } = validateBackup(data);
+    if (errors.length) {
+      alert(`Import failed: this file is not a valid B-Fit backup.\n• ${errors.join('\n• ')}\n\nNothing was changed.`);
       return;
     }
     const exported = Date.parse(data.exportedAt);
     const from = Number.isNaN(exported) ? 'Backup (date unknown)' : `Backup from ${new Date(exported).toLocaleString()}`;
     if (!confirm(`${from} with ${plural(data.sessions.length, 'session')}.\n` +
-      `You currently have ${plural(sessions.length, 'session')}.\n\n` +
-      'Import it? All data currently in the app will be replaced. You can undo this in Settings until you record or change a session.')) return;
+      `You currently have ${plural(sessions.length, 'session')}.\n` +
+      (warnings.length ? `\nNote: ${warnings.join(' ')} Such entries are imported unchanged.\n` : '') +
+      (await unsavedNote()) +
+      '\nImport it? All data currently in the app will be replaced. You can undo this in Settings until you change anything.')) return;
     try {
-      const { undoSaved } = await importAll(data);
+      await importAll(data);
       await loadColors(); // the backup may contain custom activity colours
-      if (!undoSaved) alert('Backup imported. Undo is not available: there was not enough storage to keep the previous data.');
-      else toast('Backup imported');
+      toast('Backup imported');
       refresh();
     } catch (err) {
       alert(`Import failed: ${err.message}`);
@@ -57,10 +67,10 @@ export async function render(container) {
   });
 
   /* ----- Undo last import ----- */
-  const undo = getUndoInfo();
+  const undo = await getUndoInfo();
   const undoLast = async () => {
     if (!confirm(`Undo the last import? The data from before it (${plural(undo.sessions, 'session')}) comes back, ` +
-      'and the imported data is replaced.')) return;
+      `and the imported data is replaced.\n${await unsavedNote()}`)) return;
     try {
       await undoImport();
       await loadColors();

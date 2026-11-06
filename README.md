@@ -13,7 +13,7 @@ This is a personal project. It is provided as is, without warranty of any kind, 
 - Stats: activity graph of training days (coloured by category, colours customizable in Settings), workouts per week/month, totals and most frequent exercises – for the last 4 weeks to 12 months, a calendar year (Jan–Dec, to compare years) or everything
 - Everything is stored on the device in IndexedDB, with no account and no server. A safety copy in localStorage refills the database automatically if the browser loses it
 - Works offline and can be installed with "Add to Home screen"
-- Export, share and import a JSON backup under **Settings** (includes custom colours). Shared backups are `.txt` files with the same JSON inside, because Chrome on Android doesn't share `.json` files. Import checks the whole file before replacing anything and can be undone until the next session is recorded; a reminder appears once 3 sessions are not in a backup, and Settings shows the last backup date and storage status
+- Export, share and import a JSON backup under **Settings** (includes custom colours). Shared backups are `.txt` files with the same JSON inside, because Chrome on Android doesn't share `.json` files. Import checks the whole file before replacing anything and can be undone until anything is changed; a reminder appears once 3 sessions are not in a backup, and Settings shows the last backup date and storage status
 
 ## Files
 
