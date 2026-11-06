@@ -7,7 +7,7 @@
  *   { at: ms timestamp of the last backup, snoozedAt: ms timestamp of the last "Later",
  *     trackedSince: ms timestamp from when on backups are recorded (first start with 1.5) }
  */
-import { exportAll, getSessions } from './db.js';
+import { exportAll, getSessions, getDataVersion } from './db.js';
 import { h, todayISO, toast, formatDate, toISODate } from './util.js';
 
 /** Show the reminder once this many sessions are not in a backup. */
@@ -68,10 +68,27 @@ async function backupFile() {
   return new File([JSON.stringify(data, null, 2)], `b-fit-backup-${todayISO()}.json`, { type: 'application/json' });
 }
 
-/** Can this browser share a file (e.g. to Files, Drive or e-mail)? */
+/*
+ * Sharing. Chrome on Android only shares certain file types (images, video,
+ * audio, PDF, plain text, …) – a .json file is refused with "Permission
+ * denied". So a shared backup is a .txt file (still JSON inside; Import
+ * accepts it). Chrome also only allows sharing right after a tap, so the file
+ * is prepared beforehand (prepareShare) and handed over without waiting.
+ */
+const shareName = () => `b-fit-backup-${todayISO()}.txt`;
+let prepared = null; // { file, version }
+
+/** Build the file to share now, so a later tap can share it immediately. */
+export async function prepareShare() {
+  const version = getDataVersion();
+  const data = await exportAll();
+  prepared = { file: new File([JSON.stringify(data, null, 2)], shareName(), { type: 'text/plain' }), version };
+}
+
+/** Can this browser share a backup file (e.g. to Files, Drive or e-mail)? */
 export function canShareFiles() {
   try {
-    const probe = new File(['{}'], 'b-fit-backup.json', { type: 'application/json' });
+    const probe = new File(['{}'], shareName(), { type: 'text/plain' });
     return !!(navigator.canShare && navigator.canShare({ files: [probe] }));
   } catch {
     return false;
@@ -94,7 +111,10 @@ export async function downloadBackup() {
 
 /** Open the share sheet with the backup file. Resolves with true if it was shared. */
 export async function shareBackup() {
-  const file = await backupFile();
+  // Use the prepared file if the data hasn't changed since; otherwise build it
+  // now (which may take too long for Chrome – then the download fallback runs).
+  if (!prepared || prepared.version !== getDataVersion()) await prepareShare();
+  const { file } = prepared;
   try {
     await navigator.share({ files: [file], title: 'B-Fit backup' });
   } catch (err) {
@@ -127,6 +147,7 @@ export async function nudgeBanner(onDone) {
   const sessions = await getSessions();
   if (!shouldNudge(sessions)) return null;
   const n = sessionsSinceBackup(sessions);
+  if (canShareFiles()) prepareShare().catch((err) => console.warn('Could not prepare the backup', err));
   const headline = backupUnknown(sessions)
     ? `No backup recorded yet for your ${n} session${n === 1 ? '' : 's'}.`
     : `${n} session${n === 1 ? ' is' : 's are'} not in a backup yet.`;
