@@ -252,6 +252,7 @@ export async function exportAll() {
  * "Undo last import", and the unsaved session form is discarded (its ids
  * would point to other records in the imported data).
  */
+// TODO(T3): an import is not recorded as a backup point (see TODO.md)
 export async function importAll(data) {
   const { errors } = validateBackup(data);
   if (errors.length) {
@@ -278,6 +279,7 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
  * list of problems (at most a few, in plain words); empty means it is valid.
  * Accepts every format B-Fit has written since version 1.0.
  */
+// TODO(T2): the backup `format` number is not checked (see TODO.md)
 export function validateBackup(data) {
   if (!isBackup(data)) return { errors: ['It does not contain B-Fit data (sessions, exercises and muscle groups).'], warnings: [] };
   const problems = [];
@@ -441,6 +443,7 @@ function writeMirror() {
         const data = await exportAll();
         localStorage.setItem(MIRROR_KEY, JSON.stringify({ ...data, mirroredAt: data.exportedAt }));
       } catch (err) {
+        // TODO(T1): a failed copy is only logged; Settings still says "up to date" (see TODO.md)
         console.warn('Could not update the local copy', err);
       }
     }

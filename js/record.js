@@ -85,6 +85,7 @@ function toDraftEntry(entry) {
  * Load an existing session into the form for editing (used by History).
  * Asks before throwing away another unsaved session.
  */
+// TODO(T4): re-editing the same session drops unsaved edits without asking (see TODO.md)
 export async function editSession(session) {
   const current = await getDraft();
   if (hasContent(current) && current.editingId !== session.id &&
@@ -142,6 +143,7 @@ function build() {
         h('label', { class: 'field' }, h('span', {}, 'Date'),
           h('input', {
             type: 'date', class: 'date-input', value: draft.date, required: true,
+            // TODO(T7): a cleared field keeps the old date silently (see TODO.md)
             oninput: (e) => { if (e.target.value) { draft.date = e.target.value; changed(); } },
           })),
         h('label', { class: 'field' }, h('span', {}, 'Time'),
@@ -300,6 +302,7 @@ function unitInput(unit, value, inputmode, label, onChange) {
 
 /* ---------- Save / discard ---------- */
 
+// TODO(T6): no guard against a second click while saving (see TODO.md)
 async function save() {
   const errors = [];
   const entries = [];
@@ -333,6 +336,7 @@ async function save() {
   if (errors.length) { alert(errors.join('\n')); return; }
 
   const editingId = draft.editingId;
+  // TODO(T5): if the edited session was deleted, this recreates it (see TODO.md)
   const existing = editingId != null ? await get('sessions', editingId) : null;
   const now = Date.now();
   const id = await put('sessions', {
@@ -453,6 +457,7 @@ async function openAddSheet() {
       }),
       h('span', {}, label));
 
+    // TODO(T6): no guard against a second click while creating (see TODO.md)
     const create = async () => {
       if (await findExerciseByName(name)) { toast('That exercise already exists'); return; }
       const exercise = {

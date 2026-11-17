@@ -18,6 +18,7 @@ This is a personal project. It is provided as is, without warranty of any kind, 
 ## Files
 
 ```
+TODO.md           open findings and small jobs (fix when touching that code)
 index.html        app shell + bottom navigation
 manifest.json     PWA manifest
 sw.js             service worker (offline cache)

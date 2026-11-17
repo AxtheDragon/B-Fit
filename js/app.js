@@ -66,6 +66,7 @@ async function router() {
 window.addEventListener('hashchange', router);
 
 // Start: open the database (creates it on first run), then show the screen.
+// TODO(T11): stays blank if the database never opens (see TODO.md)
 openDB().then(() => {
   const restored = getRestoreInfo();
   if (restored) {

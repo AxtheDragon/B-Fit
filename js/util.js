@@ -80,6 +80,7 @@ export function formatDate(iso, opts = { weekday: 'short', day: 'numeric', month
 }
 
 /** Parse a number typed by the user ("62,5" also works). Empty -> null. */
+// TODO(T8): Number() also accepts "0x10" and "1e3" (see TODO.md)
 export function toNumber(value) {
   if (value == null) return null;
   const s = String(value).trim().replace(',', '.');
