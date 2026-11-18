@@ -158,7 +158,6 @@ export async function render(container) {
   const storageInfo = h('ul', { class: 'health-list muted small', 'data-testid': 'storage-health' },
     h('li', {}, `Last backup: ${lastBackupText(sessions)}`,
       unsaved && !backupUnknown(sessions) ? ` (${unsaved} newer session${unsaved === 1 ? '' : 's'} not in a backup)` : ''),
-    // TODO(T1): "up to date" is shown even if the last copy write failed (see TODO.md)
     frozen ? frozenInfo : h('li', {}, mirror
       ? `Local safety copy: up to date (${mirror.sessions.length} sessions). Restores the data automatically if the browser loses the database.`
       : 'Local safety copy: not available. Export a backup to be safe.'),

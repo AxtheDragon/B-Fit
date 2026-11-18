@@ -38,7 +38,6 @@ if (!readState().trackedSince) writeState({ trackedSince: Date.now() });
 export const lastBackupAt = () => readState().at || null;
 
 /** Sessions created after the last backup. */
-// TODO(T3): imported sessions count as "not in a backup" (see TODO.md)
 export function sessionsSinceBackup(sessions) {
   const since = lastBackupAt() || 0;
   return sessions.filter((s) => (s.createdAt || 0) > since).length;

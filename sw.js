@@ -63,8 +63,6 @@ self.addEventListener('fetch', (event) => {
       ? await cache.match('index.html')
       : await cache.match(req, { ignoreSearch: true });
 
-    // TODO(T9): any navigation is cached as index.html (see TODO.md)
-    // TODO(T10): files are refreshed one by one, so an update can mix versions (see TODO.md)
     const network = fetch(req)
       .then((res) => {
         if (res.ok) cache.put(req.mode === 'navigate' ? 'index.html' : req, res.clone());

@@ -60,7 +60,6 @@ export async function renderDetail(container, id) {
 
   const del = async () => {
     if (!confirm(`Delete the session from ${formatDate(session.date)}? This cannot be undone.`)) return;
-    // TODO(T5): a draft editing this session stays and can recreate it (see TODO.md)
     await remove('sessions', id);
     toast('Session deleted');
     location.hash = '#/history';
